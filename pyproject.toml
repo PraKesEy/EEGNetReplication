@@ -1,0 +1,103 @@
+[build-system]
+requires = ["setuptools>=68", "setuptools_scm[toml]>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eegnet_repl"
+requires-python = ">=3.12"
+version = "1.1"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "tox",
+    "eegnet_repl[ds]",
+    "eegnet_repl[lint]",
+    "eegnet_repl[test]",
+    "eegnet_repl[doc]",
+    "eegnet_repl[build]",
+    "jupyterlab==4.4.10",
+]
+ds = [
+    "jupyterlab==4.4.10",
+    "numpy==2.3.4",
+    "pandas==2.3.3",
+    "matplotlib==3.10.7",
+    "scikit-learn==1.7.2",
+    "scipy==1.11.4",
+    "seaborn==0.12.3",
+    "mne==1.5.2",
+    "torch==2.2.0",
+    "torchvision==0.15.2",
+    "torchaudio==2.2.0",
+]
+lint = [
+    "mypy",
+    "ruff",
+]
+test = [
+    "pytest>=8.3.3",
+    "pytest-cov>=5.0.0",
+    "coverage[toml]==7.3.1",
+    "pytest-html==4.1.1"
+]
+doc = []
+build = [
+    "build>=1.2.2",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 120
+src = ["src"]
+extend-exclude = [
+    "conf.py",
+]
+target-version = "py312"
+lint.select = ["ALL"]
+lint.ignore = [
+    "COM812",   # Conflicts with the formatter
+    "ISC001",   # Conflicts with the formatter
+    "ANN101",   # "missing-type-self"
+    "PT001",    # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
+    "PT004",    # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
+    "PT005",    # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
+    "PT023",    # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
+    "D415",     # Docstring can end without ./!
+    "D416",     # Docstring Return can end without :
+    "S310",     # urllib open-url warning (OK here)
+    "DTZ005",   # Allow naive datetime in a tiny teaching example
+    "T201",     # allow print in CLI scripts (optional)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = [
+    "S101", # Use of `assert` detected
+    "D103", # Missing docstring in public function
+]
+"**/__init__.py" = [
+    "F401", # Imported but unused
+    "D104", # No need to doc this file
+]
+
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+disallow_untyped_defs = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+exclude = [
+    "my-project-\\d+",
+    "venv.*/",
+    "build/",
+    "dist/",
+]
