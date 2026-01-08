@@ -1,3 +1,10 @@
+# Remove the following section if you want to store data in the repo
+# Data files
+data
+.data
+data/
+.data/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
