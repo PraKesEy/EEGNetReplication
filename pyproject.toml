@@ -30,6 +30,8 @@ ds = [
     "torch==2.2.0",
     "torchvision==0.15.2",
     "torchaudio==2.2.0",
+    "kagglehub==0.3.12",
+    "braindecode[moabb]"
 ]
 lint = [
     "mypy",
