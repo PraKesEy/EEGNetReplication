@@ -28,5 +28,5 @@ class Paths:
         )
 
 
-NASA_NEOWS_BASE_URL = "https://api.nasa.gov/neo/rest/v1"
-KAGGLE_DATASET = "prashastham/bci-competition-iv-dataset-2a" 
+KAGGLE_DATASET = "prashastham/bci-competition-iv-dataset-2a"
+MOABB_DATASET = "BNCI2014_001"
