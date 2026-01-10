@@ -5,6 +5,8 @@ data
 data/
 .data/
 
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -128,7 +130,7 @@ ipython_config.py
 #   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
 #pixi.lock
 #   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
-#   in the .venv directory. It is recommended not to include this directory in version control.
+#   in the .eegnetenv directory. It is recommended not to include this directory in version control.
 .pixi
 
 # PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
@@ -144,12 +146,12 @@ celerybeat.pid
 # Environments
 .env
 .envrc
-.venv
+.eegnetenv
 env/
-venv/
+eegnetenv/
 ENV/
 env.bak/
-venv.bak/
+eegnetenv.bak/
 
 # Spyder project settings
 .spyderproject
