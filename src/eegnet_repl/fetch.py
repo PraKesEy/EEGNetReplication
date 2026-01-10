@@ -1,7 +1,7 @@
-"""Fetch Near-Earth Object data from NASA NeoWs (Near Earth Object Web Service).
+"""Fetch BCI Competition IV Dataset 2a.
 
-We use the "browse" endpoint to retrieve near-earth objects page by page, then cache
-the raw JSON responses to disk (so the pipeline is reproducible and doesn't re-hit the API).
+We use a kaggle dataset "prashastham/bci-competition-iv-dataset-2a".
+Alternatively, we can fetch from moabb.
 """
 
 from __future__ import annotations
