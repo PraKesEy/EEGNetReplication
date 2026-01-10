@@ -18,11 +18,17 @@ python -m venv .eegnetenv
 pip install -e ".[ds,test,lint]"
 ```
 
-1) Fetch data (cached into `data/BCICIV_2a_gdf/`)
+1) Fetch data (cached into `data/raw/`) from kaggle
 
 ```bash
-python -m eegnet_repl.fetch --pages 3 --api-key DEMO_KEY
+python -m eegnet_repl.fetch --src kaggle
 ```
+
+Alternative:
+```bash
+python -m eegnet_repl.fetch --src moabb
+```
+
 
 2) Build dataset + train model
 

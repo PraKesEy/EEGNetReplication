@@ -11,10 +11,10 @@ import pandas as pd
 from sklearn.metrics import ConfusionMatrixDisplay, accuracy_score, classification_report
 from sklearn.model_selection import train_test_split
 
-from my_project.config import Paths
-from my_project.dataset import build_from_default_cache, save_dataset_csv
-from my_project.logger import logger
-from my_project.model import TrainedModel, build_pipeline
+from eegnet_repl.config import Paths
+from eegnet_repl.dataset import build_from_default_cache, save_dataset_csv
+from eegnet_repl.logger import logger
+from eegnet_repl.model import TrainedModel, build_pipeline
 
 
 def save_model(model: TrainedModel, out_path: Path) -> None:

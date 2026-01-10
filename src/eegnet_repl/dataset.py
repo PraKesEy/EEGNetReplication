@@ -10,8 +10,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from my_project.config import Paths
-from my_project.logger import logger
+from eegnet_repl.config import Paths
+from eegnet_repl.logger import logger
 
 
 @dataclass(frozen=True)
@@ -118,6 +118,6 @@ def build_from_default_cache() -> Dataset:
     paths = Paths.from_here()
     files = sorted(paths.data_raw.glob("neows_browse_page_*.json"))
     if not files:
-        msg = "No cached files found in data/raw. Run: python -m my_project.fetch"
+        msg = "No cached files found in data/raw. Run: python -m eegnet_repl.fetch"
         raise FileNotFoundError(msg)
     return build_dataset(files)

@@ -98,7 +98,7 @@ disallow_untyped_defs = true
 warn_unused_ignores = true
 ignore_missing_imports = true
 exclude = [
-    "my-project-\\d+",
+    "eegnet_repl-\\d+",
     "venv.*/",
     "build/",
     "dist/",

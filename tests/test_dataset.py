@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from my_project.dataset import build_dataset
+from eegnet_repl.dataset import build_dataset
 
 
 def _write_page(tmp_path: Path, objs: list[dict]) -> Path:

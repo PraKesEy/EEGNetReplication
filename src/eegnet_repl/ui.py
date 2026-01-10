@@ -11,9 +11,9 @@ from tkinter import ttk
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from my_project.config import Paths
-from my_project.logger import logger
-from my_project.model import TrainedModel
+from eegnet_repl.config import Paths
+from eegnet_repl.logger import logger
+from eegnet_repl.model import TrainedModel
 
 
 def load_model(path: Path) -> TrainedModel:
@@ -46,8 +46,8 @@ class App(tk.Tk):
         if not self.dataset_csv.exists() or not self.model_path.exists():
             msg = (
                 "Missing data/model. Run:\n"
-                "  python -m my_project.fetch --pages 3\n"
-                "  python -m my_project.train\n"
+                "  python -m eegnet_repl.fetch --pages 3\n"
+                "  python -m eegnet_repl.train\n"
             )
             tk.messagebox.showerror("Setup required", msg)  # type: ignore[attr-defined]
             raise FileNotFoundError(msg)

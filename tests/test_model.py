@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from my_project.model import TrainedModel, build_pipeline
+from eegnet_repl.model import TrainedModel, build_pipeline
 
 
 def test_pipeline_predict_proba_shape() -> None:
