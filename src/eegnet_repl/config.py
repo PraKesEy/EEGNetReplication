@@ -13,6 +13,7 @@ class Paths:
     project_root: Path
     data_raw: Path
     data_processed: Path
+    data_moabb: Path
     models: Path
     reports: Path
 
@@ -23,6 +24,7 @@ class Paths:
             project_root=root,
             data_raw=root / "data" / "raw",
             data_processed=root / "data" / "processed",
+            data_moabb=root / "data" / "moabb",
             models=root / "models",
             reports=root / "reports",
         )

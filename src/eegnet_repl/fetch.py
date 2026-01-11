@@ -28,7 +28,7 @@ def fetch_from_kaggle(dataset: str):
         None.
     """
     # 1. Download to cache
-    cache_path = kagglehub.dataset_download("prashastham/bci-competition-iv-dataset-2a")
+    cache_path = kagglehub.dataset_download(dataset, unzip=True)
 
     # 2. Move to your local 'data' folder
     paths = Paths.from_here()
@@ -54,27 +54,45 @@ def fetch_from_moabb(dataset: str):
     Returns:
         None.
     """
-    from moabb.datasets import BNCI2014_001
-    from moabb.paradigms import MotorImagery
-    from moabb import set_log_level
-    import mne
+    from moabb.datasets import BNCI2014001
 
-    set_log_level("ERROR")
-    paradigm = MotorImagery(n_classes=4)
-    dataset = BNCI2014_001()
-    subjects = dataset.subject_list
-    logger.info(f"Found {len(subjects)} subjects in dataset {dataset}")
     paths = Paths.from_here()
-    data_raw_path = paths.data_raw / "moabb_data"
-    data_raw_path.mkdir(parents=True, exist_ok=True)
+    paths.data_raw.mkdir(parents=True, exist_ok=True)
 
-    for subject in subjects:
-        logger.info(f"Fetching data for subject {subject}")
-        X, y, metadata = paradigm.get_data(dataset=dataset, subjects=[subject])
-        # Convert to MNE Epochs object for saving
-        fname = data_raw_path / f"subject_{subject}_epochs-epo.fif"
-        logger.info(f"Saved epochs for subject {subject} to {fname}")
-        time.sleep(1)  # To avoid overwhelming any servers
+    if dataset == MOABB_DATASET:
+        dataset_obj = BNCI2014001()
+    else:
+        logger.error("Unknown moabb dataset specified: %s", dataset)
+        raise ValueError(f"Unknown moabb dataset: {dataset}")
+
+    # Fetch data for all subjects and save to data/moabb
+    out_dir = paths.data_moabb
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Train and Eval folders
+    train_dir = out_dir / "Train"
+    eval_dir = out_dir / "Eval"
+    train_dir.mkdir(parents=True, exist_ok=True)
+    eval_dir.mkdir(parents=True, exist_ok=True)
+
+    for subject in dataset_obj.subject_list:
+        logger.info("Fetching data for subject: %s", subject)
+        subject_data = dataset_obj.get_data(subjects=[subject])[subject]
+
+        # moabb returns a nested mapping {session: {run: Raw}}
+        for session, runs in subject_data.items():
+            for run_name, raw in runs.items():
+                # If train data save to train folder, else eval folder
+                if session == '0train':
+                    out_dir = train_dir
+                else:
+                    out_dir = eval_dir
+                out_path = out_dir / f"A0{subject}{'T' if session=='0train' else 'E'}_{run_name}.fif"
+                raw.save(out_path, overwrite=True)
+                logger.info(
+                    "Saved subject=%s session=%s run=%s to %s", subject, session, run_name, out_path
+                )
+                time.sleep(1)  # Be polite to the server
 
 def main() -> None:
     """CLI entrypoint."""
