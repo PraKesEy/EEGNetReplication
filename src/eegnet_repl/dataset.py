@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+
+import mne
 
 from eegnet_repl.config import Paths
 from eegnet_repl.logger import logger
@@ -23,101 +24,107 @@ class Dataset:
     target_col: str
 
 
-def _safe_float(x: Any) -> float:
-    try:
-        return float(x)
-    except (TypeError, ValueError):
-        return float("nan")
 
+'''
+    Dataset build code for EEG data from raw data
+'''
 
-def _extract_row(obj: dict[str, Any]) -> dict[str, Any]:
-    """Extract one asteroid into a flat row of features."""
-    diam = obj.get("estimated_diameter", {}).get("kilometers", {})
-    dmin = _safe_float(diam.get("estimated_diameter_min"))
-    dmax = _safe_float(diam.get("estimated_diameter_max"))
-    dmean = np.nanmean([dmin, dmax]).item() if not (np.isnan(dmin) and np.isnan(dmax)) else float("nan")
+def exponential_moving_standardize(x: np.ndarray, factor_new: float = 0.001, init_block_size: int = 1000) -> np.ndarray:
+    """Apply exponential moving standardization to the data.
 
-    cad = obj.get("close_approach_data", []) or []
-    # Take the minimum miss distance (km) across approaches, and the maximum rel velocity.
-    miss_km = float("nan")
-    vel_kph = float("nan")
-    earth_approaches = 0
-    for ca in cad:
-        md = _safe_float((ca.get("miss_distance") or {}).get("kilometers"))
-        rv = _safe_float((ca.get("relative_velocity") or {}).get("kilometers_per_hour"))
-        if not np.isnan(md):
-            miss_km = md if np.isnan(miss_km) else min(miss_km, md)
-        if not np.isnan(rv):
-            vel_kph = rv if np.isnan(vel_kph) else max(vel_kph, rv)
-        if (ca.get("orbiting_body") or "").upper() == "EARTH":
-            earth_approaches += 1
+    Args:
+        x: Input data array of shape (n_channels, n_times).
+        factor_new: Smoothing factor for the moving average.
+        init_block_size: Number of initial samples to use for mean and std calculation.
 
-    return {
-        "id": str(obj.get("id", "")),
-        "name": str(obj.get("name", "")),
-        "absolute_magnitude_h": _safe_float(obj.get("absolute_magnitude_h")),
-        "diam_km_min": dmin,
-        "diam_km_max": dmax,
-        "diam_km_mean": dmean,
-        "min_miss_distance_km": miss_km,
-        "max_relative_velocity_kph": vel_kph,
-        "n_close_approaches": int(len(cad)),
-        "n_earth_close_approaches": int(earth_approaches),
-        "is_potentially_hazardous_asteroid": int(bool(obj.get("is_potentially_hazardous_asteroid", False))),
-    }
+    Returns:
+        Standardized data array of the same shape as input.
+    """
+    x_std = np.zeros_like(x)
+    mean_prev = np.mean(x[:, :init_block_size], axis=1, keepdims=True)
+    var_prev = np.var(x[:, :init_block_size], axis=1, keepdims=True)
 
+    for t in range(x.shape[1]):
+        sample = x[:, t:t+1]
+        mean_curr = (1 - factor_new) * mean_prev + factor_new * sample
+        var_curr = (1 - factor_new) * var_prev + factor_new * (sample - mean_curr) ** 2
 
-def load_cached_objects(json_files: list[Path]) -> list[dict[str, Any]]:
-    """Load cached pages and return a flat list of asteroid objects."""
-    objects: list[dict[str, Any]] = []
-    for fp in json_files:
-        payload = json.loads(fp.read_text(encoding="utf-8"))
-        page_objects = payload.get("near_earth_objects", []) or []
-        objects.extend(page_objects)
-    logger.info("Loaded %d raw objects from %d cached pages.", len(objects), len(json_files))
-    return objects
+        x_std[:, t:t+1] = (sample - mean_curr) / np.sqrt(var_curr + 1e-10)
 
+        mean_prev = mean_curr
+        var_prev = var_curr
 
-def build_dataset(json_files: list[Path]) -> Dataset:
-    """Build a dataset DataFrame from cached JSON files."""
-    objs = load_cached_objects(json_files)
-    rows = [_extract_row(o) for o in objs]
-    df = pd.DataFrame(rows).drop_duplicates(subset=["id"]).reset_index(drop=True)
+    return x_std
 
-    # Basic cleaning: drop rows with missing target (shouldn't happen) and remove all-empty feature rows.
-    target = "is_potentially_hazardous_asteroid"
-    df = df[df[target].isin([0, 1])].copy()
+def preprocess_raw_data(src_path: Path, dest_path: Path) -> None:
+    # Read raw EEG data files from src_path/Train
+    for file in (src_path / "Train").glob("*.gdf"):
+        raw = mne.io.read_raw_gdf(file, preload=True)
 
-    feature_cols = [
-        "absolute_magnitude_h",
-        "diam_km_min",
-        "diam_km_max",
-        "diam_km_mean",
-        "min_miss_distance_km",
-        "max_relative_velocity_kph",
-        "n_close_approaches",
-        "n_earth_close_approaches",
+    # Rename the channels to more readable names
+    channel_names = [
+        'Fz',  'FC3', 'FC1', 'FCz', 'FC2', 'FC4', 'C5',  'C3',  'C1',  'Cz', 
+        'C2',  'C4',  'C6',  'CP3', 'CP1', 'CPz', 'CP2', 'CP4', 'P1',  'Pz', 
+        'P2',  'POz', 'EOG-left', 'EOG-central', 'EOG-right'
     ]
-    # Ensure numeric
-    for c in feature_cols + [target]:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    logger.info("Dataset shape: %s (hazardous rate=%.3f)", df.shape, df[target].mean())
-    return Dataset(df=df, feature_cols=feature_cols, target_col=target)
+    mapping = {old_name: new_name for old_name, new_name in zip(raw.ch_names, channel_names)}
+    raw.rename_channels(mapping)
 
+    # Set EEG channel types
+    eeg_channel_names = channel_names[:-3]  # All except the last three EOG
+    raw.set_channel_types({ch_name: 'eeg' for ch_name in eeg_channel_names})
+    # Set EOG channel types
+    eog_channel_names = channel_names[-3:]  # Last three channels
+    raw.set_channel_types({ch_name: 'eog' for ch_name in eog_channel_names})
 
-def save_dataset_csv(dataset: Dataset, out_csv: Path) -> None:
-    """Save dataset to CSV."""
-    out_csv.parent.mkdir(parents=True, exist_ok=True)
-    dataset.df.to_csv(out_csv, index=False)
-    logger.info("Saved dataset CSV: %s", out_csv)
+    # Set sensor location information
+    montage = mne.channels.make_standard_montage('standard_1020')
+    raw.set_montage(montage)
 
+    # Remove EOG channels
+    eog_channels = ['EOG-left', 'EOG-central', 'EOG-right']
+    raw.drop_channels(eog_channels)
 
-def build_from_default_cache() -> Dataset:
-    """Convenience: load all cached browse pages in data/raw."""
+    # Resample to 128 Hz
+    raw.resample(128, npad="auto")
+
+    # Adding a bandpass filter from 4Hz to 38Hz
+    raw.filter(4., 38., fir_design='firwin', skip_by_annotation='edge')
+
+    # Exponential moving standardization
+    # exponential_moving_standardize(x, factor_new=0.001, init_block_size=1000)
+    dataT = raw.get_data()
+    dataT_std = exponential_moving_standardize(dataT)
+    raw_std = raw.copy()
+    raw_std._data = dataT_std
+    raw_std.plot()
+
+    # Save preprocessed data to dest_path
+    dest_path.mkdir(parents=True, exist_ok=True)
+    out_file = dest_path / file.name.replace('.gdf', '-preprocessed.fif')
+    raw_std.save(out_file, overwrite=True)
+    logger.info(f"Saved preprocessed file to {out_file}")
+     
+
+def preprocess_moabb_data(src_path: Path, dest_path: Path) -> None:
+    pass
+     
+
+def build_eeg_dataset(src='kaggle') -> None:
+    """Build EEG dataset from raw data files."""
     paths = Paths.from_here()
-    files = sorted(paths.data_raw.glob("neows_browse_page_*.json"))
-    if not files:
-        msg = "No cached files found in data/raw. Run: python -m eegnet_repl.fetch"
-        raise FileNotFoundError(msg)
-    return build_dataset(files)
+    if src == 'kaggle':
+        raw_data_path = paths.data_raw
+    elif src == 'moabb':
+            raw_data_path = paths.data_moabb
+    processed_data_path = paths.data_processed
+    processed_data_path.mkdir(parents=True, exist_ok=True)
+
+    # Preprocess raw EEG data files and build dataset
+    if src == 'kaggle':
+        preprocess_raw_data(raw_data_path, processed_data_path)
+    elif src == 'moabb':
+        preprocess_moabb_data(raw_data_path, processed_data_path)
+    
+
