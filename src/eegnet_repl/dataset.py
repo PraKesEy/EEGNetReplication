@@ -150,7 +150,7 @@ def build_dataset_from_preprocessed(src='kaggle', subject='all') -> BCICI2ADatas
 
     if subject != 'all':
         # Filter files for the specified subject
-        files = list(dest_path.glob(f"sub-{str(subject)}-*-preprocessed.fif"))
+        files = list(dest_path.glob(f"A{subject:02d}T-preprocessed.fif"))
     else:
         # Include all preprocessed files
         files = list(dest_path.glob("*-preprocessed.fif"))
@@ -186,21 +186,12 @@ def build_dataset_from_preprocessed(src='kaggle', subject='all') -> BCICI2ADatas
         # Replace event IDs with annotation descriptions
         event_idT = {annotation_map.get(str(key), str(key)): value for key, value in event_idT.items()}
 
-        # Break the data into trial windows (0.5-2.5 seconds cue onset) using cue onset markers
-        all_event_ids = {'Cue onset left (class 1)': 7,
-                         'Cue onset right (class 2)': 8,
-                         'Cue onset foot (class 3)': 9,
-                         'Cue onset tongue (class 4)': 10}
-        # Filter to only include events that exist in this file
-        available_event_ids = {event_name: event_id for event_name, event_id in all_event_ids.items() 
-                               if event_id in event_idT.values()}
-        
-        if not available_event_ids:
-            logger.warning(f"No matching events found in {file}, skipping this file")
-            continue
-        
-        epocsT_std = mne.Epochs(pp, eventsT, event_id=available_event_ids,
-                                tmin=0.5, tmax=2.5, baseline=None, preload=True)
+        # Break the data into trial windows (0.5-2.5 seconds cue onset) using cue onset markers 
+        epocsT_std = mne.Epochs(pp, eventsT, event_id={'Cue onset left (class 1)': 7,
+                                                                'Cue onset right (class 2)': 8,
+                                                                'Cue onset foot (class 3)': 9,
+                                                                'Cue onset tongue (class 4)': 10}, 
+                                                                tmin=0.5, tmax=2.5, baseline=None, preload=True)
         
         all_data.append(epocsT_std.get_data())  # Shape: (n_epochs, n_channels, n_times)
         all_labels.append(epocsT_std.events[:, -1])  # Extract labels from events
