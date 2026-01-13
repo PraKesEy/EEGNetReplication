@@ -182,6 +182,10 @@ def build_dataset_from_preprocessed(src='kaggle', subject='all') -> BCICI2ADatas
         # Map the annotations to their descriptions
         annotationsT = [annotation_map.get(desc, desc) for desc in annotationsT]
         eventsT, event_idT = mne.events_from_annotations(pp)
+
+        # Replace event IDs with annotation descriptions
+        event_idT = {annotation_map.get(str(key), str(key)): value for key, value in event_idT.items()}
+
         # Break the data into trial windows (0.5-2.5 seconds cue onset) using cue onset markers 
         epocsT_std = mne.Epochs(pp, eventsT, event_id={'Cue onset left (class 1)': 7,
                                                                 'Cue onset right (class 2)': 8,
