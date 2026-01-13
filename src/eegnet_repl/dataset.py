@@ -9,7 +9,14 @@ from pathlib import Path
 import numpy as np
 
 import mne
+from numpy import multiply
 
+from braindecode.preprocessing import (
+    Preprocessor,
+    exponential_moving_standardize,
+    preprocess,
+    create_windows_from_events
+)
 from eegnet_repl.config import Paths
 from eegnet_repl.logger import logger
 
@@ -21,7 +28,7 @@ class BCICI2ADataset:
     y: np.ndarray # Shape: (n_trials,)
 
 
-def exponential_moving_standardize(x: np.ndarray, factor_new: float = 0.001, init_block_size: int = 1000) -> np.ndarray:
+def raw_exponential_moving_standardize(x: np.ndarray, factor_new: float = 0.001, init_block_size: int = 1000) -> np.ndarray:
     """Apply exponential moving standardization to the data.
 
     Args:
@@ -160,8 +167,35 @@ def build_dataset_from_preprocessed(src='kaggle', subject='all') -> BCICI2ADatas
      
 
 def preprocess_moabb_data(src_path: Path, dest_path: Path) -> None:
-    # TODO: Implement preprocessing for MOABB dataset
-    pass
+    # Read raw EEG data files from src_path/Train
+    for file in (src_path / "Train").glob("*.fif"):
+        raw = mne.io.read_raw_fif(file, preload=True)
+
+        # Preprocessing steps
+        low_cut_hz = 4.0  # low cut frequency for filtering
+        high_cut_hz = 38.0  # high cut frequency for filtering
+        # Parameters for exponential moving standardization
+        factor_new = 1e-3
+        init_block_size = 1000
+        # Factor to convert from V to uV
+        factor = 1e6
+        #  New sampling rate
+        new_sfreq = 128.0
+
+        preprocessors = [
+            Preprocessor("pick_types", eeg=True, meg=False, stim=False),  # Keep EEG sensors
+            Preprocessor(lambda data: multiply(data, factor)),  # Convert from V to uV
+            Preprocessor("resample", sfreq=new_sfreq),  # Resample to new_sfreq
+            Preprocessor("filter", l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
+            Preprocessor(
+                exponential_moving_standardize,  # Exponential moving standardization
+                factor_new=factor_new,
+                init_block_size=init_block_size,
+            ),
+        ]
+
+        # Transform the data
+        preprocess(raw, preprocessors, n_jobs=-1)
      
 
 def build_eeg_dataset(src='kaggle') -> None:
