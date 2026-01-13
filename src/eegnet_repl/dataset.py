@@ -11,6 +11,11 @@ import numpy as np
 import mne
 from numpy import multiply
 
+import torch
+from torch.utils.data import Dataset
+from torchvision.transforms import ToTensor
+import matplotlib.pyplot as plt
+
 from braindecode.preprocessing import (
     Preprocessor,
     exponential_moving_standardize,
@@ -22,11 +27,19 @@ from eegnet_repl.logger import logger
 
 
 @dataclass(frozen=True)
-class BCICI2ADataset:
-    """Dataset bundle."""
-    X: np.ndarray # Shape: (n_trials, n_channels, n_times)
-    y: np.ndarray # Shape: (n_trials,)
+class BCICI2ADataset(Dataset):
+    """Dataset bundle for BCI Competition IV Dataset 2a."""
 
+    X: np.ndarray  # Shape: (n_samples, n_channels, n_times)
+    y: np.ndarray  # Shape: (n_samples,)
+
+    def __len__(self) -> int:
+        """Return number of samples in the dataset."""
+        return self.X.shape[0]
+
+    def __getitem__(self, idx: int) -> tuple[np.ndarray, int]:
+        """Return a single sample and its label."""
+        return self.X[idx], int(self.y[idx])
 
 def raw_exponential_moving_standardize(x: np.ndarray, factor_new: float = 0.001, init_block_size: int = 1000) -> np.ndarray:
     """Apply exponential moving standardization to the data.
