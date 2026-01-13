@@ -105,7 +105,7 @@ def preprocess_raw_data(src_path: Path, dest_path: Path) -> None:
         # Exponential moving standardization
         # exponential_moving_standardize(x, factor_new=0.001, init_block_size=1000)
         dataT = raw.get_data()
-        dataT_std = exponential_moving_standardize(dataT)
+        dataT_std = raw_exponential_moving_standardize(dataT)
         raw_std = raw.copy()
         raw_std._data = dataT_std
 
