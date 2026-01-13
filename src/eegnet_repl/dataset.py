@@ -10,7 +10,14 @@ import numpy as np
 import pandas as pd
 
 import mne
+from numpy import multiply
 
+from braindecode.preprocessing import (
+    Preprocessor,
+    exponential_moving_standardize,
+    preprocess,
+    create_windows_from_events
+)
 from eegnet_repl.config import Paths
 from eegnet_repl.logger import logger
 
@@ -29,7 +36,7 @@ class Dataset:
     Dataset build code for EEG data from raw data
 '''
 
-def exponential_moving_standardize(x: np.ndarray, factor_new: float = 0.001, init_block_size: int = 1000) -> np.ndarray:
+def raw_exponential_moving_standardize(x: np.ndarray, factor_new: float = 0.001, init_block_size: int = 1000) -> np.ndarray:
     """Apply exponential moving standardization to the data.
 
     Args:
@@ -95,7 +102,7 @@ def preprocess_raw_data(src_path: Path, dest_path: Path) -> None:
     # Exponential moving standardization
     # exponential_moving_standardize(x, factor_new=0.001, init_block_size=1000)
     dataT = raw.get_data()
-    dataT_std = exponential_moving_standardize(dataT)
+    dataT_std = raw_exponential_moving_standardize(dataT)
     raw_std = raw.copy()
     raw_std._data = dataT_std
     raw_std.plot()
@@ -108,7 +115,35 @@ def preprocess_raw_data(src_path: Path, dest_path: Path) -> None:
      
 
 def preprocess_moabb_data(src_path: Path, dest_path: Path) -> None:
-    pass
+    # Read raw EEG data files from src_path/Train
+    for file in (src_path / "Train").glob("*.fif"):
+        raw = mne.io.read_raw_fif(file, preload=True)
+
+        # Preprocessing steps
+        low_cut_hz = 4.0  # low cut frequency for filtering
+        high_cut_hz = 38.0  # high cut frequency for filtering
+        # Parameters for exponential moving standardization
+        factor_new = 1e-3
+        init_block_size = 1000
+        # Factor to convert from V to uV
+        factor = 1e6
+        #  New sampling rate
+        new_sfreq = 128.0
+
+        preprocessors = [
+            Preprocessor("pick_types", eeg=True, meg=False, stim=False),  # Keep EEG sensors
+            Preprocessor(lambda data: multiply(data, factor)),  # Convert from V to uV
+            Preprocessor("resample", sfreq=new_sfreq),  # Resample to new_sfreq
+            Preprocessor("filter", l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
+            Preprocessor(
+                exponential_moving_standardize,  # Exponential moving standardization
+                factor_new=factor_new,
+                init_block_size=init_block_size,
+            ),
+        ]
+
+        # Transform the data
+        preprocess(raw, preprocessors, n_jobs=-1)
      
 
 def build_eeg_dataset(src='kaggle') -> None:
