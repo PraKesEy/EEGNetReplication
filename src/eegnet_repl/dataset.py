@@ -161,6 +161,26 @@ def build_dataset_from_preprocessed(src='kaggle', subject='all') -> BCICI2ADatas
     all_labels = []
     for file in files:
         pp = mne.io.read_raw_fif(file, preload=True)
+        # create a plot of annotation descriptions over time
+        annotationsT = pp.annotations.description
+
+        # Annotation conversion map
+        annotation_map = {
+            '276': 'Idling EEG (eyes open)',
+            '277': 'Idling EEG (eyes closed)',
+            '768': 'Start of a trial',
+            '769': 'Cue onset left (class 1)',
+            '770': 'Cue onset right (class 2)',
+            '771': 'Cue onset foot (class 3)',
+            '772': 'Cue onset tongue (class 4)',
+            '783': 'Cue unknown',
+            '1023': 'Rejected trial',
+            '1072': 'Eye movements',
+            '32766': 'Start of a new run',
+        }
+
+        # Map the annotations to their descriptions
+        annotationsT = [annotation_map.get(desc, desc) for desc in annotationsT]
         eventsT, event_idT = mne.events_from_annotations(pp)
         # Break the data into trial windows (0.5-2.5 seconds cue onset) using cue onset markers 
         epocsT_std = mne.Epochs(pp, eventsT, event_id={'Cue onset left (class 1)': 7,
