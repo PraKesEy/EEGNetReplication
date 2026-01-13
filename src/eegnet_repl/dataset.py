@@ -150,7 +150,7 @@ def build_dataset_from_preprocessed(src='kaggle', subject='all') -> BCICI2ADatas
 
     if subject != 'all':
         # Filter files for the specified subject
-        files = list(dest_path.glob(f"sub-{subject:02d}-*-preprocessed.fif"))
+        files = list(dest_path.glob(f"sub-{str(subject)}-*-preprocessed.fif"))
     else:
         # Include all preprocessed files
         files = list(dest_path.glob("*-preprocessed.fif"))
