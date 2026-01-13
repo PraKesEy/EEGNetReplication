@@ -28,7 +28,7 @@ def fetch_from_kaggle(dataset: str):
         None.
     """
     # 1. Download to cache
-    cache_path = kagglehub.dataset_download(dataset, unzip=True)
+    cache_path = kagglehub.dataset_download(dataset)
 
     # 2. Move to your local 'data' folder
     paths = Paths.from_here()
