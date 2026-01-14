@@ -187,7 +187,6 @@ def build_dataset_from_preprocessed(src='kaggle', subject='all') -> BCICI2ADatas
         event_idT = {annotation_map.get(str(key), str(key)): value for key, value in event_idT.items()}
 
         # Break the data into trial windows (0.5-2.5 seconds cue onset) using cue onset markers 
-        # Break the data into trial windows (0.5-2.5 seconds cue onset) using cue onset markers
         all_event_ids = {'Cue onset left (class 1)': 7,
                          'Cue onset right (class 2)': 8,
                          'Cue onset foot (class 3)': 9,
