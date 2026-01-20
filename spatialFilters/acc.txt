@@ -1,0 +1,9 @@
+Sub1: Validation Accuracy: 75.00%
+Sub2: Validation Accuracy: 64.29%
+Sub3: Validation Accuracy: 82.14%
+Sub4: Validation Accuracy: 71.43%
+Sub5: Validation Accuracy: 53.57%  *
+Sub6: Validation Accuracy: 35.71%  **
+Sub7: Validation Accuracy: 78.57%
+Sub8: Validation Accuracy: 71.43%
+Sub9: Validation Accuracy: 85.71%
