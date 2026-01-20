@@ -7,3 +7,5 @@ Sub6: Validation Accuracy: 35.71%  **
 Sub7: Validation Accuracy: 78.57%
 Sub8: Validation Accuracy: 71.43%
 Sub9: Validation Accuracy: 85.71%
+
+Cross_subject: Validation Accuracy: 63.52%
