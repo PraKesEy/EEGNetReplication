@@ -30,13 +30,19 @@ python -m eegnet_repl.fetch --src moabb
 ```
 
 
-2) Build dataset + train model
+2) Preprocess data (cached into `data/processed/`)
+
+```bash
+python -m eegnet_repl.dataset --src kaggle
+```
+
+3) Build dataset & Train model
 
 ```bash
 python -m eegnet_repl.train --test-size 0.2 --seed 42
 ```
 
-3) Run UI
+4) Run UI
 
 ```bash
 python -m eegnet_repl.ui
