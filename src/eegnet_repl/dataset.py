@@ -15,6 +15,8 @@ import torch
 from torch.utils.data import Dataset
 from torchvision.transforms import ToTensor
 import matplotlib.pyplot as plt
+from scipy import io
+import os
 
 from braindecode.preprocessing import (
     Preprocessor,
@@ -128,6 +130,157 @@ def preprocess_raw_data(src_path: Path, dest_path: Path) -> None:
         raw_std.save(out_file, overwrite=True)
         logger.info(f"Saved preprocessed file to {out_file}")
 
+def map_labels(labels: np.ndarray, map: dict) -> np.ndarray:
+    '''
+    Transform the labels according to the rule in the map.
+    
+    Args:
+        labels: np.ndarray of shape (n_labels,)
+        map: dictionary with old labels as keys and corresponding new labels as values. 
+        
+    Note: For EEGNet the new labels (map values) should start from 0.
+
+    Returns:
+        Mapped labels in the same shape and dtype as original labels.
+    '''
+
+    new_labels = np.zeros_like(labels)
+    for old_label, new_label in map.items():
+        new_labels[labels == old_label] = new_label
+
+    if not set(new_labels).issubset(set(map.values())):
+        raise RuntimeError(f"Not all labels were mapped.")
+    
+    if not set(map.values())==set(new_labels):
+        logger.warning(f"Some classes are missing from the labels.")
+
+    return new_labels
+
+def break_data_into_epochs(src_path: Path, mode: str = 'Train') -> tuple[np.ndarray, np.ndarray]:
+    '''
+    Break preprocessed EEG data into epochs based on cues.
+    
+    Args:
+        src_path: Path to the processed EEG data file.
+        mode: Whether to use training or testing data for the dataset ('Train' or 'Eval')
+
+    Returns:
+        EEG data separated into epochs and corresponding labels.
+    '''
+    file = os.path.basename(os.path.normpath(src_path))[:4] # first 4 symbols of the file passed in, e.g. A01T, as str
+    paths = Paths.from_here()
+    root = paths.project_root
+    
+    pp = mne.io.read_raw_fif(src_path, preload=True)
+    # create a plot of annotation descriptions over time
+    annotationsT = pp.annotations.description
+
+    # Annotation conversion map
+    annotation_map = {
+        '276': 'Idling EEG (eyes open)',
+        '277': 'Idling EEG (eyes closed)',
+        '768': 'Start of a trial',
+        '769': 'Cue onset left (class 1)',
+        '770': 'Cue onset right (class 2)',
+        '771': 'Cue onset foot (class 3)',
+        '772': 'Cue onset tongue (class 4)',
+        '783': 'Cue unknown',
+        '1023': 'Rejected trial',
+        '1072': 'Eye movements',
+        '32766': 'Start of a new run',
+    }
+
+    # Map the annotations to their descriptions
+    annotationsT = [annotation_map.get(desc, desc) for desc in annotationsT]
+    eventsT, event_idT = mne.events_from_annotations(pp)
+
+    # Replace event IDs with annotation descriptions
+    event_idT = {annotation_map.get(str(key), str(key)): value for key, value in event_idT.items()}
+
+    # Break the data into trial windows (0.5-2.5 seconds cue onset) using cue onset markers
+    if mode == 'Train':
+        if '4' not in file:        
+            all_event_ids = {'Cue onset left (class 1)': 7,
+                                'Cue onset right (class 2)': 8,
+                                'Cue onset foot (class 3)': 9,
+                                'Cue onset tongue (class 4)': 10}
+            map = dict([(7,0),(8,1),(9,2),(10,3)])
+        else:
+            all_event_ids = {'Cue onset left (class 1)': 5,
+                                'Cue onset right (class 2)': 6,
+                                'Cue onset foot (class 3)': 7,
+                                'Cue onset tongue (class 4)': 8}
+            map = dict([(5,0),(6,1),(7,2),(8,3)])
+    elif mode == 'Eval':
+        all_event_ids = {'Cue unknown': 7}
+        map = dict([(1,0),(2,1),(3,2),(4,3)])
+    else: 
+        raise ValueError(f"Unknown trainig mode: {mode}")
+
+    # Filter to only include events that exist in this file
+    available_event_ids = {event_name: event_id for event_name, event_id in all_event_ids.items() 
+                            if event_id in event_idT.values()}
+    
+    epocsT_std = mne.Epochs(pp, eventsT, event_id=available_event_ids,
+                            tmin=0.5, tmax=2.5, baseline=None, preload=True)
+    
+    data = epocsT_std.get_data()
+    labels = epocsT_std.events[:, -1]
+
+    if mode == 'Eval':
+        filename_generator = (root / 'true_labels').glob(f'{file}.mat')
+        filename = next(filename_generator)
+        labels = io.loadmat(file_name=filename, squeeze_me=True)
+        labels = labels['classlabel']
+    
+    labels = map_labels(labels=labels, map=map)
+
+    return data, labels
+
+def build_dataset_from_preprocessed_2(src='kaggle', subject='all', mode='Train') -> BCICI2ADataset:
+    '''
+    Build a Dataset object from preprocessed EEG data files in dest_path.
+    
+    Args:
+        src: Source of the dataset ('kaggle' or 'moabb').
+        subject: Subject identifier [1-9] (default is 'all' to include all subjects).
+        mode: Whether to use training or testing data for the dataset ('Train' or 'Eval')
+
+    Returns:
+        Dataset object containing the data and metadata.
+    '''
+    paths = Paths.from_here()
+    if src == 'kaggle':
+        dest_path = paths.data_processed / mode
+    elif src == 'moabb':
+        dest_path = paths.data_moabb_processed / mode
+    else:
+        raise ValueError(f"Unknown source: {src}")
+    logger.info(f"Building dataset from preprocessed data in {dest_path}")
+
+    if subject != 'all':
+        # Filter files for the specified subject
+        files = list(dest_path.glob(f"A{subject:02d}{mode[0]}-preprocessed.fif"))
+    else:
+        # Include all preprocessed files
+        files = list(dest_path.glob("*-preprocessed.fif"))
+    if not files:
+        raise ValueError(f"No preprocessed files found in {dest_path} for subject {subject}")
+    logger.info(f"Found {len(files)} preprocessed files for subject {subject}")
+    all_data = []
+    all_labels = []
+    for file in files:
+
+        data, labels = break_data_into_epochs(src_path=file,mode=mode)
+
+        all_data.append(data)  # Shape: (n_epochs, n_channels, n_times)
+        all_labels.append(labels)  # Extract labels from events
+
+    X = np.concatenate(all_data, axis=0)
+    y = np.concatenate(all_labels, axis=0)
+
+    return BCICI2ADataset(X=X, y=y)
+
 def build_dataset_from_preprocessed(src='kaggle', subject='all', type='Train') -> BCICI2ADataset:
     '''
     Build a Dataset object from preprocessed EEG data files in dest_path.
@@ -144,7 +297,7 @@ def build_dataset_from_preprocessed(src='kaggle', subject='all', type='Train') -
     if src == 'kaggle':
         dest_path = paths.data_processed / type
     elif src == 'moabb':
-        dest_path = paths.data_moabb_processed
+        dest_path = paths.data_moabb_processed / type
     else:
         raise ValueError(f"Unknown source: {src}")
     logger.info(f"Building dataset from preprocessed data in {dest_path}")
