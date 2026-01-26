@@ -81,7 +81,7 @@ def preprocess_raw_data(src_path: Path, dest_path: Path) -> None:
     '''
     logger.info(f"Preprocessing raw data from {src_path} to {dest_path}")
     # Read raw EEG data files from src_path/Train
-    for file in (src_path / "Train").glob("*.gdf"):
+    for file in (src_path).glob("*.gdf"): # for file in (src_path / "Train").glob("*.gdf"):
         raw = mne.io.read_raw_gdf(file, preload=True)
 
         # Rename the channels to more readable names
@@ -128,20 +128,21 @@ def preprocess_raw_data(src_path: Path, dest_path: Path) -> None:
         raw_std.save(out_file, overwrite=True)
         logger.info(f"Saved preprocessed file to {out_file}")
 
-def build_dataset_from_preprocessed(src='kaggle', subject='all') -> BCICI2ADataset:
+def build_dataset_from_preprocessed(src='kaggle', subject='all', type='Train') -> BCICI2ADataset:
     '''
     Build a Dataset object from preprocessed EEG data files in dest_path.
     
     Args:
         src: Source of the dataset ('kaggle' or 'moabb').
         subject: Subject identifier [1-9] (default is 'all' to include all subjects).
+        type: Whether to use training or testing data for the dataset ('Train' or 'Eval')
 
     Returns:
         Dataset object containing the data and metadata.
     '''
     paths = Paths.from_here()
     if src == 'kaggle':
-        dest_path = paths.data_processed
+        dest_path = paths.data_processed / type
     elif src == 'moabb':
         dest_path = paths.data_moabb_processed
     else:
@@ -150,7 +151,7 @@ def build_dataset_from_preprocessed(src='kaggle', subject='all') -> BCICI2ADatas
 
     if subject != 'all':
         # Filter files for the specified subject
-        files = list(dest_path.glob(f"A{subject:02d}T-preprocessed.fif"))
+        files = list(dest_path.glob(f"A{subject:02d}{type[0]}-preprocessed.fif"))
     else:
         # Include all preprocessed files
         files = list(dest_path.glob("*-preprocessed.fif"))
@@ -214,7 +215,7 @@ def build_dataset_from_preprocessed(src='kaggle', subject='all') -> BCICI2ADatas
 
 def preprocess_moabb_data(src_path: Path, dest_path: Path) -> None:
     # Read raw EEG data files from src_path/Train
-    for file in (src_path / "Train").glob("*.fif"):
+    for file in (src_path).glob("*.fif"):
         raw = mne.io.read_raw_fif(file, preload=True)
 
         # Preprocessing steps
@@ -275,11 +276,19 @@ def main() -> None:
     raw_data_path = paths.data_raw if args.src == 'kaggle' else paths.data_moabb
     processed_data_path = paths.data_processed if args.src == 'kaggle' else paths.data_moabb_processed
 
+    # Train and Eval folders
+    train_dir = processed_data_path / "Train"
+    eval_dir = processed_data_path / "Eval"
+    train_dir.mkdir(parents=True, exist_ok=True)
+    eval_dir.mkdir(parents=True, exist_ok=True)
+
     logger.info("Preprocessing data from source: %s", args.src)
     if args.src == "kaggle":
-        preprocess_raw_data(raw_data_path, processed_data_path)
+        preprocess_raw_data(raw_data_path / "Train", processed_data_path / "Train")
+        preprocess_raw_data(raw_data_path / "Eval", processed_data_path / "Eval")
     elif args.src == "moabb":
-        preprocess_moabb_data(raw_data_path, processed_data_path)
+        preprocess_moabb_data(raw_data_path / "Train", processed_data_path / "Train")
+        preprocess_moabb_data(raw_data_path / "Eval", processed_data_path / "Eval")
     else:
         logger.error("Unknown source specified: %s", args.src)
         raise ValueError(f"Unknown source: {args.src}")
