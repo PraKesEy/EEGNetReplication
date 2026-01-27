@@ -36,10 +36,10 @@ python -m eegnet_repl.fetch --src moabb
 python -m eegnet_repl.dataset --src kaggle
 ```
 
-3) Build dataset & Train model
+3) Train model & Report generation
 
 ```bash
-python -m eegnet_repl.train --test-size 0.2 --seed 42
+python -m eegnet_repl.train --trainingType Within-Subject --generateReport True
 ```
 
 4) Run UI
@@ -48,13 +48,18 @@ python -m eegnet_repl.train --test-size 0.2 --seed 42
 python -m eegnet_repl.ui
 ```
 
-## What students should implement (good Git issues)
 
-- Add 2 more engineered features (e.g., log-transform, earth-only close approaches)
-- Add a second model (e.g., RandomForest) and compare results
-- Add a saved confusion-matrix figure under `reports/`
-- Add one more test (e.g., “dataset has no negative diameters”, “model predicts probabilities in [0,1]”)
+## Unit tests
 
-## Notes
+1) Unit test for functions in dataset.py
 
-- `DEMO_KEY` is fine for small experiments but has low rate limits; students can generate their own API keys on NASA Open APIs.
+```bash
+python -m pytest tests/test_dataset.py -v
+```
+2) Unit test for functions in model.py
+
+```bash
+python -m pytest tests/test_model.py -v
+```
+
+
