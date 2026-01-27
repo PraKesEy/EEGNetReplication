@@ -1,36 +1,42 @@
-"""Tiny UI to explore asteroid hazard predictions."""
-
 from __future__ import annotations
 
-import pickle
+import json
 import random
+import subprocess
+import sys
+import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import ttk
+from tkinter import ttk, scrolledtext, messagebox
+from tkinter.ttk import Progressbar
 
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 import pandas as pd
 import numpy as np
 import torch
 from torch import nn
 from torch.utils import data
-import matplotlib.pyplot as plt
 from mne.viz import plot_topomap
 import mne
 
 from eegnet_repl.config import Paths
 from eegnet_repl.logger import logger
-#from eegnet_repl.model import TrainedModel
+from eegnet_repl.model import EEGNet
 
 
-def load_model(path: Path) -> TrainedModel:
+def load_model(path: Path) -> EEGNet:
     """Load trained model."""
-    with path.open("rb") as f:
-        obj = pickle.load(f)
-    if not isinstance(obj, TrainedModel):
-        raise TypeError("Loaded object is not a TrainedModel.")
-    return obj
-
+    # Load the state dict
+    state_dict = torch.load(path, map_location='cpu')
+    
+    # Create model instance with default parameters
+    # Note: These should match the parameters used during training
+    model = EEGNet(C=22, T=256)  # Default values, adjust if needed
+    model.load_state_dict(state_dict)
+    model.eval()
+    return model
 
 def _format_float(x: float) -> str:
     if pd.isna(x):
@@ -38,110 +44,466 @@ def _format_float(x: float) -> str:
     return f"{x:.3g}"
 
 
+class LogHandler:
+    """Custom log handler to capture logs in GUI."""
+    def __init__(self, text_widget):
+        self.text_widget = text_widget
+    
+    def write(self, message):
+        if message.strip():  # Only write non-empty messages
+            self.text_widget.insert(tk.END, message)
+            self.text_widget.see(tk.END)
+            self.text_widget.update()
+    
+    def flush(self):
+        pass
+
+
 class App(tk.Tk):
-    """Asteroid explorer UI."""
+    """Model trainer and explorer app UI."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.title("NEO Hazard Lab — Asteroid Risk Explorer")
-        self.geometry("980x520")
-
+        self.title("EEGNet Model Trainer and Explorer")
+        self.geometry("1200x800")
+        
+        # Create main notebook for tabs
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Create tabs
+        self.create_training_tab()
+        self.create_logs_tab()
+        self.create_reports_tab()
+        self.create_exploration_tab()
+        
+        # Variables for tracking processes
+        self.current_process = None
+        self.reports_data = {}
+    
+    def create_training_tab(self):
+        """Create the training pipeline tab."""
+        training_frame = ttk.Frame(self.notebook)
+        self.notebook.add(training_frame, text="Training Pipeline")
+        
+        # Title
+        title = ttk.Label(training_frame, text="EEGNet Training Pipeline", font=('Arial', 16, 'bold'))
+        title.pack(pady=10)
+        
+        # Step 1: Fetch Data
+        step1_frame = ttk.LabelFrame(training_frame, text="Step 1: Fetch Data", padding=10)
+        step1_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(step1_frame, text="Data Source:").grid(row=0, column=0, sticky=tk.W, padx=5)
+        self.source_var = tk.StringVar(value="kaggle")
+        source_combo = ttk.Combobox(step1_frame, textvariable=self.source_var, values=["kaggle", "moabb"])
+        source_combo.grid(row=0, column=1, padx=5)
+        
+        fetch_btn = ttk.Button(step1_frame, text="Fetch Data", command=self.fetch_data)
+        fetch_btn.grid(row=0, column=2, padx=10)
+        
+        # Step 2: Preprocess Data
+        step2_frame = ttk.LabelFrame(training_frame, text="Step 2: Preprocess Data", padding=10)
+        step2_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        preprocess_btn = ttk.Button(step2_frame, text="Preprocess Data", command=self.preprocess_data)
+        preprocess_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Step 3: Train Model
+        step3_frame = ttk.LabelFrame(training_frame, text="Step 3: Train Model", padding=10)
+        step3_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(step3_frame, text="Training Type:").grid(row=0, column=0, sticky=tk.W, padx=5)
+        self.training_type_var = tk.StringVar(value="Within-Subject")
+        training_combo = ttk.Combobox(step3_frame, textvariable=self.training_type_var, 
+                                    values=["Within-Subject", "Cross-Subject"])
+        training_combo.grid(row=0, column=1, padx=5)
+        
+        self.generate_report_var = tk.BooleanVar(value=True)
+        report_check = ttk.Checkbutton(step3_frame, text="Generate Report", variable=self.generate_report_var)
+        report_check.grid(row=0, column=2, padx=10)
+        
+        train_btn = ttk.Button(step3_frame, text="Train Model", command=self.train_model)
+        train_btn.grid(row=0, column=3, padx=10)
+        
+        # Progress bar
+        self.progress = Progressbar(training_frame, mode='indeterminate')
+        self.progress.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Status label
+        self.status_var = tk.StringVar(value="Ready")
+        status_label = ttk.Label(training_frame, textvariable=self.status_var)
+        status_label.pack(pady=5)
+    
+    def create_logs_tab(self):
+        """Create the logs viewing tab."""
+        logs_frame = ttk.Frame(self.notebook)
+        self.notebook.add(logs_frame, text="Logs")
+        
+        # Title
+        title = ttk.Label(logs_frame, text="Real-time Logs", font=('Arial', 16, 'bold'))
+        title.pack(pady=10)
+        
+        # Log text area
+        self.log_text = scrolledtext.ScrolledText(logs_frame, height=25, width=120)
+        self.log_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Clear logs button
+        clear_btn = ttk.Button(logs_frame, text="Clear Logs", command=self.clear_logs)
+        clear_btn.pack(pady=5)
+    
+    def create_reports_tab(self):
+        """Create the reports viewing tab."""
+        reports_frame = ttk.Frame(self.notebook)
+        self.notebook.add(reports_frame, text="Training Reports")
+        
+        # Title
+        title = ttk.Label(reports_frame, text="Training Results", font=('Arial', 16, 'bold'))
+        title.pack(pady=10)
+        
+        # Refresh button
+        refresh_btn = ttk.Button(reports_frame, text="Refresh Reports", command=self.load_reports)
+        refresh_btn.pack(pady=5)
+        
+        # Create notebook for different report types
+        self.reports_notebook = ttk.Notebook(reports_frame)
+        self.reports_notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Load initial reports
+        self.load_reports()
+    
+    def create_exploration_tab(self):
+        """Create the model exploration tab."""
+        exploration_frame = ttk.Frame(self.notebook)
+        self.notebook.add(exploration_frame, text="Model Exploration")
+        
+        # Title
+        title = ttk.Label(exploration_frame, text="Model Filter Visualization", font=('Arial', 16, 'bold'))
+        title.pack(pady=10)
+        
+        # Model selection
+        model_frame = ttk.LabelFrame(exploration_frame, text="Select Model", padding=10)
+        model_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(model_frame, text="Subject (for Within-Subject):").grid(row=0, column=0, sticky=tk.W, padx=5)
+        self.subject_var = tk.StringVar(value="01")
+        subject_combo = ttk.Combobox(model_frame, textvariable=self.subject_var, 
+                                   values=[f"{i:02d}" for i in range(1, 10)])
+        subject_combo.grid(row=0, column=1, padx=5)
+        
+        ttk.Label(model_frame, text="Model Type:").grid(row=0, column=2, sticky=tk.W, padx=5)
+        self.model_type_var = tk.StringVar(value="Within-Subject")
+        model_type_combo = ttk.Combobox(model_frame, textvariable=self.model_type_var, 
+                                      values=["Within-Subject", "Cross-Subject"])
+        model_type_combo.grid(row=0, column=3, padx=5)
+        
+        # Visualization buttons
+        viz_frame = ttk.LabelFrame(exploration_frame, text="Visualizations", padding=10)
+        viz_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Button(viz_frame, text="Plot Temporal Filters", 
+                  command=self.plot_temporal_filters_gui).grid(row=0, column=0, padx=5, pady=5)
+        ttk.Button(viz_frame, text="Plot Spatial Filters", 
+                  command=self.plot_spatial_filters_gui).grid(row=0, column=1, padx=5, pady=5)
+        ttk.Button(viz_frame, text="Plot Power Spectra", 
+                  command=self.plot_power_spectra_gui).grid(row=0, column=2, padx=5, pady=5)
+    
+    def fetch_data(self):
+        """Execute data fetching in a separate thread."""
+        def run_fetch():
+            self.status_var.set("Fetching data...")
+            self.progress.start()
+            try:
+                cmd = [sys.executable, "-m", "eegnet_repl.fetch", "--src", self.source_var.get()]
+                self.run_subprocess(cmd, "Data fetching completed")
+            except Exception as e:
+                messagebox.showerror("Error", f"Data fetching failed: {str(e)}")
+                self.status_var.set("Error in data fetching")
+            finally:
+                self.progress.stop()
+        
+        threading.Thread(target=run_fetch, daemon=True).start()
+    
+    def preprocess_data(self):
+        """Execute data preprocessing in a separate thread."""
+        def run_preprocess():
+            self.status_var.set("Preprocessing data...")
+            self.progress.start()
+            try:
+                cmd = [sys.executable, "-m", "eegnet_repl.dataset", "--src", self.source_var.get()]
+                self.run_subprocess(cmd, "Data preprocessing completed")
+            except Exception as e:
+                messagebox.showerror("Error", f"Data preprocessing failed: {str(e)}")
+                self.status_var.set("Error in data preprocessing")
+            finally:
+                self.progress.stop()
+        
+        threading.Thread(target=run_preprocess, daemon=True).start()
+    
+    def train_model(self):
+        """Execute model training in a separate thread."""
+        def run_train():
+            self.status_var.set("Training model...")
+            self.progress.start()
+            try:
+                cmd = [sys.executable, "-m", "eegnet_repl.train", 
+                      "--trainingType", self.training_type_var.get(),
+                      "--generateReport", str(self.generate_report_var.get())]
+                self.run_subprocess(cmd, "Model training completed")
+                # Refresh reports after training
+                self.after(1000, self.load_reports)
+            except Exception as e:
+                messagebox.showerror("Error", f"Model training failed: {str(e)}")
+                self.status_var.set("Error in model training")
+            finally:
+                self.progress.stop()
+        
+        threading.Thread(target=run_train, daemon=True).start()
+    
+    def run_subprocess(self, cmd, success_message):
+        """Run subprocess and capture output to logs."""
+        try:
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+                                     text=True, bufsize=1, universal_newlines=True)
+            self.current_process = process
+            
+            for line in process.stdout:
+                self.log_text.insert(tk.END, line)
+                self.log_text.see(tk.END)
+                self.log_text.update()
+            
+            process.wait()
+            if process.returncode == 0:
+                self.status_var.set(success_message)
+                self.log_text.insert(tk.END, f"\n=== {success_message} ===\n")
+            else:
+                self.status_var.set("Process failed")
+                self.log_text.insert(tk.END, f"\n=== Process failed with return code {process.returncode} ===\n")
+                
+        except Exception as e:
+            self.log_text.insert(tk.END, f"\nError running subprocess: {str(e)}\n")
+            raise
+    
+    def clear_logs(self):
+        """Clear the log text area."""
+        self.log_text.delete(1.0, tk.END)
+    
+    def load_reports(self):
+        """Load and display training reports."""
+        self.reports_data = get_report()
+        
+        # Clear existing report tabs
+        for tab in self.reports_notebook.tabs():
+            self.reports_notebook.forget(tab)
+        
+        if 'within_subject' in self.reports_data:
+            self.create_within_subject_report_tab()
+        
+        if 'cross_subject' in self.reports_data:
+            self.create_cross_subject_report_tab()
+        
+        if not self.reports_data:
+            # Show message if no reports found
+            no_reports_frame = ttk.Frame(self.reports_notebook)
+            self.reports_notebook.add(no_reports_frame, text="No Reports")
+            ttk.Label(no_reports_frame, text="No training reports found.\nPlease run training first.", 
+                     font=('Arial', 12)).pack(expand=True)
+    
+    def create_within_subject_report_tab(self):
+        """Create tab for within-subject training results."""
+        ws_frame = ttk.Frame(self.reports_notebook)
+        self.reports_notebook.add(ws_frame, text="Within-Subject")
+        
+        report = self.reports_data['within_subject']
+        
+        # Create scrollable frame
+        canvas = tk.Canvas(ws_frame)
+        scrollbar = ttk.Scrollbar(ws_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        
+        # Overall results
+        overall_frame = ttk.LabelFrame(scrollable_frame, text="Overall Results", padding=10)
+        overall_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        overall_results = report['overall_results']
+        ttk.Label(overall_frame, text=f"Average Test Accuracy: {overall_results['average_test_accuracy']}%", 
+                 font=('Arial', 12, 'bold')).pack(anchor=tk.W)
+        ttk.Label(overall_frame, text=f"Best Subject: {overall_results['best_subject_accuracy']}%").pack(anchor=tk.W)
+        ttk.Label(overall_frame, text=f"Worst Subject: {overall_results['worst_subject_accuracy']}%").pack(anchor=tk.W)
+        ttk.Label(overall_frame, text=f"Standard Deviation: {overall_results['accuracy_std']}%").pack(anchor=tk.W)
+        
+        # Per-subject results table
+        table_frame = ttk.LabelFrame(scrollable_frame, text="Per-Subject Results", padding=10)
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        # Create treeview for results
+        columns = ('Subject', 'Accuracy', 'Rank')
+        tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=10)
+        
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=100)
+        
+        for result in report['per_subject_results']:
+            tree.insert('', tk.END, values=(
+                f"Subject {result['subject_id']}",
+                f"{result['test_accuracy']}%",
+                result['performance_rank']
+            ))
+        
+        tree.pack(fill=tk.BOTH, expand=True)
+        
+        # Add bar chart
+        self.create_accuracy_chart(scrollable_frame, report['per_subject_results'], "Within-Subject")
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+    
+    def create_cross_subject_report_tab(self):
+        """Create tab for cross-subject training results."""
+        cs_frame = ttk.Frame(self.reports_notebook)
+        self.reports_notebook.add(cs_frame, text="Cross-Subject")
+        
+        report = self.reports_data['cross_subject']
+        
+        # Create scrollable frame
+        canvas = tk.Canvas(cs_frame)
+        scrollbar = ttk.Scrollbar(cs_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        
+        # Overall results
+        overall_frame = ttk.LabelFrame(scrollable_frame, text="Overall Results", padding=10)
+        overall_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        overall_results = report['overall_results']
+        ttk.Label(overall_frame, text=f"Average Test Accuracy: {overall_results['average_test_accuracy']}%", 
+                 font=('Arial', 12, 'bold')).pack(anchor=tk.W)
+        ttk.Label(overall_frame, text=f"Standard Error: ±{overall_results['standard_error']}%").pack(anchor=tk.W)
+        ttk.Label(overall_frame, text=f"Best Subject: {overall_results['best_subject_accuracy']}%").pack(anchor=tk.W)
+        ttk.Label(overall_frame, text=f"Worst Subject: {overall_results['worst_subject_accuracy']}%").pack(anchor=tk.W)
+        
+        # Per-subject results table
+        table_frame = ttk.LabelFrame(scrollable_frame, text="Per-Subject Results (Test Subject)", padding=10)
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        columns = ('Test Subject', 'Accuracy', 'Rank')
+        tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=10)
+        
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=120)
+        
+        for result in report['per_subject_results']:
+            tree.insert('', tk.END, values=(
+                f"Subject {result['test_subject_id']}",
+                f"{result['test_accuracy']}%",
+                result['performance_rank']
+            ))
+        
+        tree.pack(fill=tk.BOTH, expand=True)
+        
+        # Add bar chart
+        self.create_accuracy_chart(scrollable_frame, report['per_subject_results'], "Cross-Subject")
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+    
+    def create_accuracy_chart(self, parent, results, title_prefix):
+        """Create a bar chart of test accuracies."""
+        chart_frame = ttk.LabelFrame(parent, text="Accuracy Comparison", padding=10)
+        chart_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        fig = Figure(figsize=(10, 6), dpi=100)
+        ax = fig.add_subplot(111)
+        
+        # Extract data
+        if 'subject_id' in results[0]:  # Within-subject
+            subjects = [f"S{r['subject_id']}" for r in results]
+            accuracies = [r['test_accuracy'] for r in results]
+        else:  # Cross-subject
+            subjects = [f"S{r['test_subject_id']}" for r in results]
+            accuracies = [r['test_accuracy'] for r in results]
+        
+        bars = ax.bar(subjects, accuracies, color='steelblue', alpha=0.7)
+        ax.set_xlabel('Subject')
+        ax.set_ylabel('Test Accuracy (%)')
+        ax.set_title(f'{title_prefix} - Test Accuracy by Subject')
+        ax.grid(axis='y', alpha=0.3)
+        
+        # Add value labels on bars
+        for bar, acc in zip(bars, accuracies):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5, 
+                   f'{acc}%', ha='center', va='bottom')
+        
+        # Add average line
+        avg_acc = np.mean(accuracies)
+        ax.axhline(y=avg_acc, color='red', linestyle='--', alpha=0.7, 
+                  label=f'Average: {avg_acc:.2f}%')
+        ax.legend()
+        
+        plt.setp(ax.get_xticklabels(), rotation=45)
+        fig.tight_layout()
+        
+        canvas = FigureCanvasTkAgg(fig, chart_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+    
+    def plot_temporal_filters_gui(self):
+        """Plot temporal filters using GUI selection."""
+        try:
+            model_path = self.get_selected_model_path()
+            if model_path and model_path.exists():
+                model = load_model(model_path)
+                plot_temporal_filters(model.state_dict())
+            else:
+                messagebox.showerror("Error", "Selected model file not found.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to plot temporal filters: {str(e)}")
+    
+    def plot_spatial_filters_gui(self):
+        """Plot spatial filters using GUI selection."""
+        try:
+            model_path = self.get_selected_model_path()
+            if model_path and model_path.exists():
+                model = load_model(model_path)
+                plot_spatial_filters(model.state_dict())
+            else:
+                messagebox.showerror("Error", "Selected model file not found.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to plot spatial filters: {str(e)}")
+    
+    def plot_power_spectra_gui(self):
+        """Plot power spectra using GUI selection."""
+        try:
+            model_path = self.get_selected_model_path()
+            if model_path and model_path.exists():
+                model = load_model(model_path)
+                plot_power_spectra_of_temporal_filters(model.state_dict())
+            else:
+                messagebox.showerror("Error", "Selected model file not found.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to plot power spectra: {str(e)}")
+    
+    def get_selected_model_path(self) -> Path:
+        """Get the path to the selected model."""
         paths = Paths.from_here()
-        self.dataset_csv = paths.data_processed / "neo_dataset.csv"
-        self.model_path = paths.models / "hazard_model.pkl"
+        
+        if self.model_type_var.get() == "Within-Subject":
+            model_filename = f"subject_{self.subject_var.get()}_best_model.pth"
+        else:
+            model_filename = "cross_subject_best_model.pth"
+        
+        return paths.models / model_filename
 
-        if not self.dataset_csv.exists() or not self.model_path.exists():
-            msg = (
-                "Missing data/model. Run:\n"
-                "  python -m eegnet_repl.fetch --pages 3\n"
-                "  python -m eegnet_repl.train\n"
-            )
-            tk.messagebox.showerror("Setup required", msg)  # type: ignore[attr-defined]
-            raise FileNotFoundError(msg)
-
-        self.df = pd.read_csv(self.dataset_csv)
-        self.model = load_model(self.model_path)
-
-        # Controls
-        top = ttk.Frame(self)
-        top.pack(fill="x", padx=10, pady=10)
-
-        ttk.Button(top, text="Random sample (10)", command=self.show_random_sample).pack(side="left", padx=5)
-        ttk.Button(top, text="Top risk (10)", command=self.show_top_risk).pack(side="left", padx=5)
-        ttk.Button(top, text="Plot: diameter vs hazard", command=self.plot_diameter).pack(side="left", padx=5)
-
-        self.status = ttk.Label(top, text="")
-        self.status.pack(side="right")
-
-        # Table
-        cols = ("name", "diam_km_mean", "min_miss_distance_km", "max_relative_velocity_kph", "p_hazard", "true")
-        self.tree = ttk.Treeview(self, columns=cols, show="headings", height=18)
-        self.tree.pack(fill="both", expand=True, padx=10, pady=10)
-
-        headers = {
-            "name": "Name",
-            "diam_km_mean": "Diameter (km)",
-            "min_miss_distance_km": "Min miss dist (km)",
-            "max_relative_velocity_kph": "Max rel vel (kph)",
-            "p_hazard": "Model P(hazard)",
-            "true": "True hazard",
-        }
-        for c in cols:
-            self.tree.heading(c, text=headers[c])
-            self.tree.column(c, width=140 if c != "name" else 260, anchor="w")
-
-        self.show_random_sample()
-
-    def _predict_for_rows(self, rows: pd.DataFrame) -> pd.DataFrame:
-        X = rows[self.model.feature_cols]
-        probs = self.model.predict_proba_hazard(X)
-        out = rows.copy()
-        out["p_hazard"] = probs
-        return out
-
-    def _set_rows(self, rows: pd.DataFrame, title: str) -> None:
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-
-        for _, r in rows.iterrows():
-            values = (
-                str(r.get("name", "")),
-                _format_float(r.get("diam_km_mean")),
-                _format_float(r.get("min_miss_distance_km")),
-                _format_float(r.get("max_relative_velocity_kph")),
-                f"{float(r.get('p_hazard', 0.0)):.3f}",
-                str(int(r.get("is_potentially_hazardous_asteroid", 0))),
-            )
-            self.tree.insert("", "end", values=values)
-
-        rate = float(self.df["is_potentially_hazardous_asteroid"].mean())
-        self.status.config(text=f"{title} | dataset hazard-rate={rate:.3f}")
-        logger.info("UI view: %s (%d rows)", title, len(rows))
-
-    def show_random_sample(self) -> None:
-        n = min(10, len(self.df))
-        idx = random.sample(range(len(self.df)), k=n)
-        rows = self._predict_for_rows(self.df.iloc[idx])
-        self._set_rows(rows, "Random sample")
-
-    def show_top_risk(self) -> None:
-        scored = self._predict_for_rows(self.df)
-        top = scored.sort_values("p_hazard", ascending=False).head(10)
-        self._set_rows(top, "Top model risk")
-
-    def plot_diameter(self) -> None:
-        # Simple scatter: diameter vs predicted probability
-        scored = self._predict_for_rows(self.df)
-        x = scored["diam_km_mean"].astype(float)
-        y = scored["p_hazard"].astype(float)
-        plt.figure()
-        plt.scatter(x, y)
-        plt.xlabel("Diameter (km)")
-        plt.ylabel("Model P(hazard)")
-        plt.title("Diameter vs predicted hazard probability")
-        plt.show()
-
-# Functions for EEGNet, not connected to UI yet
+# Complementary functions for plotting
 
 def plot_temporal_filters(model_dict) -> None:
     # Plot learned temporal filters
@@ -218,6 +580,31 @@ def plot_power_spectra_of_temporal_filters(model_dict) -> None:
         #axes[row, col].legend(['PSD', 'Power Spectrum'])
     plt.tight_layout()
     plt.show()
+
+def get_report() -> dict:
+    """Load the most recent training reports."""
+    paths = Paths.from_here()
+    reports = {}
+    
+    # Try to load within-subject report
+    ws_report_path = paths.reports / "latest_within_subject_report.json"
+    if ws_report_path.exists():
+        try:
+            with open(ws_report_path, 'r', encoding='utf-8') as f:
+                reports['within_subject'] = json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading within-subject report: {e}")
+    
+    # Try to load cross-subject report
+    cs_report_path = paths.reports / "latest_cross_subject_report.json"
+    if cs_report_path.exists():
+        try:
+            with open(cs_report_path, 'r', encoding='utf-8') as f:
+                reports['cross_subject'] = json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading cross-subject report: {e}")
+    
+    return reports
 
 
 def main() -> None:
