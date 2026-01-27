@@ -185,10 +185,12 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
             best_model = model.state_dict()
 
         if e%50==0:
-            logger.info("Epoch: {}/{}.. ".format(e+1, nepochs),
-            "Training Loss: {:.3f}.. ".format(running_loss/len(train_loader)),
-            "Validation Loss: {:.3f}.. ".format(running_val_loss/len(val_loader)),
-            "Validation Accuracy: {:.2f}%.. ".format(val_accuracies[-1]))
+            logger.info("Epoch: {}/{}.. Training Loss: {:.3f}.. Validation Loss: {:.3f}.. Validation Accuracy: {:.2f}%.. ".format(
+                e+1, nepochs, 
+                running_loss/len(train_loader),
+                running_val_loss/len(val_loader),
+                val_accuracies[-1]
+            ))
 
     return best_model, train_losses, val_losses, val_accuracies
 
