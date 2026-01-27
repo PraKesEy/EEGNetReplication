@@ -180,8 +180,11 @@ def cross_subject_training():
     # Load data for all subjects
     logger.info("Loading data for all subjects...")
     all_subjects_data = {}
+    all_subjects_eval_data = {}
+    
     for subject_id in range(1, 10):
         all_subjects_data[subject_id] = build_dataset_from_preprocessed(subject=subject_id)
+        all_subjects_eval_data[subject_id] = build_dataset_from_preprocessed(subject=subject_id, mode="Eval")
     
     # Track results
     all_fold_test_acc = []
@@ -197,7 +200,7 @@ def cross_subject_training():
         subject_test_acc = []
         
         # Get test data for this subject
-        test_data = all_subjects_data[subject_id]
+        test_data = all_subjects_eval_data[subject_id]
         
         # Get other subjects
         other_subjects = [s for s in range(1, 10) if s != subject_id]
