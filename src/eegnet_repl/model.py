@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from eegnet_repl.logger import logger
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -113,19 +115,20 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
 
     Returns: 
     1. state_dict of the model with the lowest validation loss, 
-    2. list of train losses,
-    3. list of validation losses.
+    2. train losses across epochs
+    3. validation losses across epochs
+    4. validation accuracies across epochs
     '''
     
     # Detect device and move model to it
     device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
-    print(f"Training on {device} device")
+    logger.info(f"Training on {device} device")
     
     # Move model to device
     model = model.to(device)
     
     
-    train_losses, val_losses = [], []
+    train_losses, val_losses, val_accuracies = [], [], []
     best_model = model.state_dict()
 
     for e in range(nepochs):
@@ -159,6 +162,8 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
 
     #else:
         val_loss = 0
+        correct = 0
+        total = 0
         # Evalaute model on validation at the end of each epoch.
         with torch.no_grad():
             for signals, labels in val_loader: # signals = (batch, C, T), labels = (batch, label)
@@ -179,20 +184,27 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
                 val_loss = loss_fn(preds,new_labels)
 
                 running_val_loss += val_loss.item()
+                
+                # Calculate accuracy
+                predicted_classes = torch.argmax(preds, dim=1)
+                correct += (predicted_classes == new_labels).sum().item()
+                total += new_labels.size(0)
 
-        # track train loss and validation loss
+        # track train loss, validation loss, and validation accuracy
         train_losses.append(running_loss/len(train_loader))
         val_losses.append(running_val_loss/len(val_loader))
+        val_accuracies.append(100 * correct / total)
 
         if running_val_loss == np.min(np.array(val_losses)):
             best_model = model.state_dict()
 
         if e%50==0:
-            print("Epoch: {}/{}.. ".format(e+1, nepochs),
+            logger.info("Epoch: {}/{}.. ".format(e+1, nepochs),
             "Training Loss: {:.3f}.. ".format(running_loss/len(train_loader)),
-            "Validation Loss: {:.3f}.. ".format(running_val_loss/len(val_loader)))
+            "Validation Loss: {:.3f}.. ".format(running_val_loss/len(val_loader)),
+            "Validation Accuracy: {:.2f}%.. ".format(val_accuracies[-1]))
 
-    return best_model, train_losses, val_losses
+    return best_model, train_losses, val_losses, val_accuracies
 
 def test(model, test_loader, loss_fn) -> float:
     '''
@@ -203,17 +215,18 @@ def test(model, test_loader, loss_fn) -> float:
     loss_fn - the criterion (loss function)
 
     Returns: 
-    test loss
+    test accuracy (percentage)
     '''
     
     # Detect device and move model to it
     device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
-    print(f"Testing on {device} device")
+    logger.info(f"Testing on {device} device")
     
     # Move model to device
     model = model.to(device)
     
-    test_loss = 0
+    correct = 0
+    total = 0
 
     with torch.no_grad():
         for signals, labels in test_loader: # signals = (batch, C, T), labels = (batch, label)
@@ -231,8 +244,10 @@ def test(model, test_loader, loss_fn) -> float:
             signals, new_labels = signals.to(device), new_labels.to(device)
             
             preds = model(signals)
-            loss = loss_fn(preds,new_labels)
+            
+            # Calculate accuracy
+            predicted_classes = torch.argmax(preds, dim=1)
+            correct += (predicted_classes == new_labels).sum().item()
+            total += new_labels.size(0)
 
-            test_loss += loss.item()
-
-    return test_loss/len(test_loader)
+    return 100 * correct / total
