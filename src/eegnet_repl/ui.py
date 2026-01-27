@@ -143,8 +143,20 @@ class App(tk.Tk):
 
 # Functions for EEGNet, not connected to UI yet
 
+def plot_temporal_filters(model_dict) -> None:
+    # Plot learned temporal filters
+    temporal_filters = model_dict['temporal.0.weight']
+    n_filters = temporal_filters.shape[0]
+    plt.figure(figsize=(10, 6))
+    for i in range(n_filters):
+        plt.plot(temporal_filters[i, 0, 0].cpu().numpy(), label=f'Filter {i+1}')
+    plt.title('Learned Temporal Filters')
+    plt.xlabel('Time Points')
+    plt.ylabel('Amplitude')
+    plt.legend()
+    plt.show()
+
 def plot_spatial_filters(model_dict) -> None:
-    
     # Visualize learned spatial filters using montages
     # Isolate the area that has electrodes and plot topomaps
     info = mne.create_info(
