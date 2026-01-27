@@ -120,7 +120,7 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
     4. validation accuracies across epochs
     '''
     
-    # Detect device and move model to it
+    # Detect device (GPU) and move model to it
     device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
     logger.info(f"Training on {device} device")
     
@@ -218,7 +218,7 @@ def test(model, test_loader, loss_fn) -> float:
     test accuracy (percentage)
     '''
     
-    # Detect device and move model to it
+    # Detect device (GPU) and move model to it
     device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
     logger.info(f"Testing on {device} device")
     
