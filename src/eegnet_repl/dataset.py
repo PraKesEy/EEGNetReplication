@@ -83,7 +83,7 @@ def preprocess_raw_data(src_path: Path, dest_path: Path) -> None:
     '''
     logger.info(f"Preprocessing raw data from {src_path} to {dest_path}")
     # Read raw EEG data files from src_path/Train
-    for file in (src_path).glob("*.gdf"): # for file in (src_path / "Train").glob("*.gdf"):
+    for file in (src_path).glob("*.gdf"): # for file in (src_path / "Train" and "Eval").glob("*.gdf"):
         raw = mne.io.read_raw_gdf(file, preload=True)
 
         # Rename the channels to more readable names
@@ -228,7 +228,7 @@ def break_data_into_epochs(src_path: Path, mode: str = 'Train') -> tuple[np.ndar
     labels = epocsT_std.events[:, -1]
 
     if mode == 'Eval':
-        filename_generator = (root / 'true_labels').glob(f'{file}.mat')
+        filename_generator = (paths.data_raw / 'TrueLabels').glob(f'{file}.mat')
         filename = next(filename_generator)
         labels = io.loadmat(file_name=filename, squeeze_me=True)
         labels = labels['classlabel']
@@ -237,7 +237,7 @@ def break_data_into_epochs(src_path: Path, mode: str = 'Train') -> tuple[np.ndar
 
     return data, labels
 
-def build_dataset_from_preprocessed_2(src='kaggle', subject='all', mode='Train') -> BCICI2ADataset:
+def build_dataset_from_preprocessed(src='kaggle', subject="all", mode='Train') -> BCICI2ADataset:
     '''
     Build a Dataset object from preprocessed EEG data files in dest_path.
     
@@ -260,7 +260,7 @@ def build_dataset_from_preprocessed_2(src='kaggle', subject='all', mode='Train')
 
     if subject != 'all':
         # Filter files for the specified subject
-        files = list(dest_path.glob(f"A{subject:02d}{mode[0]}-preprocessed.fif"))
+        files = list(dest_path.glob(f"A{int(subject):02d}{mode[0]}-preprocessed.fif"))
     else:
         # Include all preprocessed files
         files = list(dest_path.glob("*-preprocessed.fif"))
@@ -275,89 +275,6 @@ def build_dataset_from_preprocessed_2(src='kaggle', subject='all', mode='Train')
 
         all_data.append(data)  # Shape: (n_epochs, n_channels, n_times)
         all_labels.append(labels)  # Extract labels from events
-
-    X = np.concatenate(all_data, axis=0)
-    y = np.concatenate(all_labels, axis=0)
-
-    return BCICI2ADataset(X=X, y=y)
-
-def build_dataset_from_preprocessed(src='kaggle', subject='all', type='Train') -> BCICI2ADataset:
-    '''
-    Build a Dataset object from preprocessed EEG data files in dest_path.
-    
-    Args:
-        src: Source of the dataset ('kaggle' or 'moabb').
-        subject: Subject identifier [1-9] (default is 'all' to include all subjects).
-        type: Whether to use training or testing data for the dataset ('Train' or 'Eval')
-
-    Returns:
-        Dataset object containing the data and metadata.
-    '''
-    paths = Paths.from_here()
-    if src == 'kaggle':
-        dest_path = paths.data_processed / type
-    elif src == 'moabb':
-        dest_path = paths.data_moabb_processed / type
-    else:
-        raise ValueError(f"Unknown source: {src}")
-    logger.info(f"Building dataset from preprocessed data in {dest_path}")
-
-    if subject != 'all':
-        # Filter files for the specified subject
-        files = list(dest_path.glob(f"A{subject:02d}{type[0]}-preprocessed.fif"))
-    else:
-        # Include all preprocessed files
-        files = list(dest_path.glob("*-preprocessed.fif"))
-    if not files:
-        raise ValueError(f"No preprocessed files found in {dest_path} for subject {subject}")
-    logger.info(f"Found {len(files)} preprocessed files for subject {subject}")
-    all_data = []
-    all_labels = []
-    for file in files:
-        pp = mne.io.read_raw_fif(file, preload=True)
-        # create a plot of annotation descriptions over time
-        annotationsT = pp.annotations.description
-
-        # Annotation conversion map
-        annotation_map = {
-            '276': 'Idling EEG (eyes open)',
-            '277': 'Idling EEG (eyes closed)',
-            '768': 'Start of a trial',
-            '769': 'Cue onset left (class 1)',
-            '770': 'Cue onset right (class 2)',
-            '771': 'Cue onset foot (class 3)',
-            '772': 'Cue onset tongue (class 4)',
-            '783': 'Cue unknown',
-            '1023': 'Rejected trial',
-            '1072': 'Eye movements',
-            '32766': 'Start of a new run',
-        }
-
-        # Map the annotations to their descriptions
-        annotationsT = [annotation_map.get(desc, desc) for desc in annotationsT]
-        eventsT, event_idT = mne.events_from_annotations(pp)
-
-        # Replace event IDs with annotation descriptions
-        event_idT = {annotation_map.get(str(key), str(key)): value for key, value in event_idT.items()}
-
-        # Break the data into trial windows (0.5-2.5 seconds cue onset) using cue onset markers 
-        all_event_ids = {'Cue onset left (class 1)': 7,
-                         'Cue onset right (class 2)': 8,
-                         'Cue onset foot (class 3)': 9,
-                         'Cue onset tongue (class 4)': 10}
-        # Filter to only include events that exist in this file
-        available_event_ids = {event_name: event_id for event_name, event_id in all_event_ids.items() 
-                               if event_id in event_idT.values()}
-        
-        if not available_event_ids:
-            logger.warning(f"No matching events found in {file}, skipping this file")
-            continue
-        
-        epocsT_std = mne.Epochs(pp, eventsT, event_id=available_event_ids,
-                                tmin=0.5, tmax=2.5, baseline=None, preload=True)
-        
-        all_data.append(epocsT_std.get_data())  # Shape: (n_epochs, n_channels, n_times)
-        all_labels.append(epocsT_std.events[:, -1])  # Extract labels from events
 
     X = np.concatenate(all_data, axis=0)
     y = np.concatenate(all_labels, axis=0)
