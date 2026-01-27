@@ -24,7 +24,7 @@ import torch.optim as optim
 
 
 BATCH_SIZE = 64
-EPOCHS = 100
+EPOCHS = 500
 LEARNING_RATE = 0.001
 
 # def save_model(model: TrainedModel, out_path: Path) -> None:
