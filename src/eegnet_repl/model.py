@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-@dataclass(frozen=True)
+#@dataclass(frozen=True)
 # Define model
 class EEGNet(nn.Module):
     def __init__(self, C, T, F1=8, D=2, p=0.5):
@@ -135,23 +135,16 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
         running_loss = 0
         running_val_loss = 0
         for signals, labels in train_loader: # signals = (batch, C, T), labels = (batch, label)
-
-            # Map the old values (7, 8, 9, 10) to new values (0, 1, 2, 3) -> need to change data processing later
-            new_labels = torch.zeros_like(labels)
-            new_labels[labels == 7] = 0
-            new_labels[labels == 8] = 1
-            new_labels[labels == 9] = 2
-            new_labels[labels == 10] = 3
             
             signals = signals.float() # added to avoid dtype mismatch error
 
             # Move data to device
-            signals, new_labels = signals.to(device), new_labels.to(device)
+            signals, labels = signals.to(device), labels.to(device)
 
             # Training pass
             model.train() # set model in train mode
             preds = model(signals)
-            loss = loss_fn(preds,new_labels)
+            loss = loss_fn(preds,labels)
 
             running_loss += loss.item()
 
@@ -168,20 +161,13 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
         with torch.no_grad():
             for signals, labels in val_loader: # signals = (batch, C, T), labels = (batch, label)
 
-                # Map the old values (7, 8, 9, 10) to new values (0, 1, 2, 3) -> need to change data processing later
-                new_labels = torch.zeros_like(labels)
-                new_labels[labels == 7] = 0
-                new_labels[labels == 8] = 1
-                new_labels[labels == 9] = 2
-                new_labels[labels == 10] = 3
-
                 signals = signals.float() # added to avoid dtype mismatch error
                 
                 # Move data to device
-                signals, new_labels = signals.to(device), new_labels.to(device)
+                signals, labels = signals.to(device), labels.to(device)
                 
                 preds = model(signals)
-                val_loss = loss_fn(preds,new_labels)
+                val_loss = loss_fn(preds,labels)
 
                 running_val_loss += val_loss.item()
                 
@@ -231,17 +217,10 @@ def test(model, test_loader, loss_fn) -> float:
     with torch.no_grad():
         for signals, labels in test_loader: # signals = (batch, C, T), labels = (batch, label)
 
-            # Map the old values (7, 8, 9, 10) to new values (0, 1, 2, 3) -> need to change data processing later
-            new_labels = torch.zeros_like(labels)
-            new_labels[labels == 7] = 0
-            new_labels[labels == 8] = 1
-            new_labels[labels == 9] = 2
-            new_labels[labels == 10] = 3
-
             signals = signals.float() # added to avoid dtype mismatch error
             
             # Move data to device
-            signals, new_labels = signals.to(device), new_labels.to(device)
+            signals, labels = signals.to(device), labels.to(device)
             
             preds = model(signals)
             

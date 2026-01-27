@@ -10,10 +10,17 @@ from tkinter import ttk
 
 import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
+import torch
+from torch import nn
+from torch.utils import data
+import matplotlib.pyplot as plt
+from mne.viz import plot_topomap
+import mne
 
 from eegnet_repl.config import Paths
 from eegnet_repl.logger import logger
-from eegnet_repl.model import TrainedModel
+#from eegnet_repl.model import TrainedModel
 
 
 def load_model(path: Path) -> TrainedModel:
@@ -133,6 +140,72 @@ class App(tk.Tk):
         plt.ylabel("Model P(hazard)")
         plt.title("Diameter vs predicted hazard probability")
         plt.show()
+
+# Functions for EEGNet, not connected to UI yet
+
+def plot_spatial_filters(model_dict) -> None:
+    
+    # Visualize learned spatial filters using montages
+    # Isolate the area that has electrodes and plot topomaps
+    info = mne.create_info(
+        ch_names=[
+                'Fz',  'FC3', 'FC1', 'FCz', 'FC2', 'FC4', 'C5',  'C3',  'C1',  'Cz', 
+                'C2',  'C4',  'C6',  'CP3', 'CP1', 'CPz', 'CP2', 'CP4', 'P1',  'Pz', 
+                'P2',  'POz'
+            ],
+        sfreq=128,
+        ch_types='eeg'
+    )
+    montage = mne.channels.make_standard_montage('standard_1020')
+    info.set_montage(montage)
+    spatial_filters = model_dict['spatial.weight']  # shape = (F1*D, F1, C, 1)
+    num_filters = spatial_filters.shape[0]
+    # Plot in a grid
+    n_cols = 4
+    n_rows = int(np.ceil(num_filters / n_cols))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols*4, n_rows*4))
+    for i in range(num_filters):
+        ax = axes[i // n_cols, i % n_cols]
+        filter_weights = spatial_filters[i, 0, :, 0].cpu().numpy()  # shape = (C,)
+        plot_topomap(filter_weights, info, axes=ax, show=False, cmap='viridis')
+        ax.set_title(f'Spatial Filter {i+1}')
+    plt.tight_layout()
+    plt.show()
+
+def PS(time_signal, f_sampling, method='ps'):
+    fft = np.fft.fft(time_signal)
+    mag_squared = np.real(fft * np.conjugate(fft))
+    f = np.fft.fftfreq(len(time_signal), 1/f_sampling)
+
+    if method == 'psd':
+        scaling_factor = 2 / (f_sampling * len(time_signal))
+    else:
+        scaling_factor = 2 / (len(time_signal)**2) 
+
+    PS = scaling_factor * mag_squared
+    return f, PS
+
+def plot_power_spectra_of_temporal_filters(model_dict) -> None:
+    # Plotting learned temporal filters in subplots
+    temporal_filters = model_dict['temporal.0.weight']
+    n_filters = temporal_filters.shape[0]
+    n_cols = 4
+    n_rows = n_filters // n_cols + int(n_filters % n_cols > 0)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 8))
+    for i in range(n_filters):
+        row = i // n_cols
+        col = i % n_cols
+        #f, ps_version1 = PS(time_signal=temporal_filters[i, 0, 0].cpu().numpy(), f_sampling=128, method='psd') # Power Spectral Density scaling
+        f, ps_version2 = PS(time_signal=temporal_filters[i, 0, 0].cpu().numpy(), f_sampling=128, method='ps')  # Power Spectrum scaling
+        #axes[row, col].plot(f[0:len(f)//2-1], ps_version1[0:len(f)//2-1], 'ko-')
+        axes[row, col].plot(f[0:len(f)//2-1], ps_version2[0:len(f)//2-1], 'ro-')
+        axes[row, col].set_title(f'Temporal Filter {i+1}')
+        axes[row, col].set_xlabel('Frequency (Hz)')
+        axes[row, col].set_ylabel('Power (dB)')
+        axes[row, col].set_xticks(range(0,51,10))
+        #axes[row, col].legend(['PSD', 'Power Spectrum'])
+    plt.tight_layout()
+    plt.show()
 
 
 def main() -> None:
