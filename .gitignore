@@ -5,6 +5,9 @@ data
 data/
 .data/
 
+# Model files
+models
+models/
 
 
 # Byte-compiled / optimized / DLL files
