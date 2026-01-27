@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -27,30 +29,6 @@ BATCH_SIZE = 64
 EPOCHS = 500
 LEARNING_RATE = 0.001
 
-# def save_model(model: TrainedModel, out_path: Path) -> None:
-#     """Persist a trained model bundle using pickle."""
-#     out_path.parent.mkdir(parents=True, exist_ok=True)
-#     with out_path.open("wb") as f:
-#         pickle.dump(model, f)
-#     logger.info("Saved model: %s", out_path)
-
-
-# def load_model(path: Path) -> TrainedModel:
-#     """Load a trained model bundle."""
-#     with path.open("rb") as f:
-#         obj = pickle.load(f)
-#     assert isinstance(obj, TrainedModel)  # noqa: S101
-#     return obj
-
-
-# def plot_confusion_matrix(y_true: pd.Series, y_pred: pd.Series, out_path: Path) -> None:
-#     """Save a confusion matrix plot."""
-#     fig, ax = plt.subplots()
-#     ConfusionMatrixDisplay.from_predictions(y_true, y_pred, ax=ax)
-#     ax.set_title("Confusion matrix")
-#     out_path.parent.mkdir(parents=True, exist_ok=True)
-#     fig.savefig(out_path, bbox_inches="tight", dpi=150)
-#     plt.close(fig)
 
 def within_subject_training():
     '''
@@ -107,7 +85,7 @@ def within_subject_training():
             # Initialize model, loss function, and optimizer
             model = EEGNet(C=subject_data.X.shape[1], T=subject_data.X.shape[2], p=0.5)  # p=0.5 for within-subject
             
-            optimizer = torch.optim.Adam(
+            optimizer = optim.Adam(
                 params=model.parameters(),
                 lr=LEARNING_RATE,
                 eps=1e-07,  # the only change from default eps=1e-8
@@ -248,7 +226,7 @@ def cross_subject_training():
             # Initialize model with p=0.25 for cross-subject
             model = EEGNet(C=train_X.shape[1], T=train_X.shape[2], p=0.25)
             
-            optimizer = torch.optim.Adam(
+            optimizer = optim.Adam(
                 params=model.parameters(),
                 lr=LEARNING_RATE,
                 eps=1e-07,
@@ -304,24 +282,226 @@ def cross_subject_training():
     
     return best_model_state, per_subject_test_acc, avg_test_acc_all
 
+
+def generate_ws_report(per_subject_test_acc, avg_test_acc_all_subjects, best_model_states_all_subjects):
+    """
+    Generate a within-subject training report in JSON format.
+    
+    Args:
+        per_subject_test_acc: List of average test accuracies per subject
+        avg_test_acc_all_subjects: Overall average test accuracy across all subjects
+        best_model_states_all_subjects: List of best model state dictionaries per subject
+    """
+    paths = Paths.from_here()
+    
+    # Create reports directory if it doesn't exist
+    paths.reports.mkdir(parents=True, exist_ok=True)
+    
+    # Create report data structure
+    report_data = {
+        "training_type": "Within-Subject",
+        "timestamp": datetime.now().isoformat(),
+        "model_parameters": {
+            "batch_size": BATCH_SIZE,
+            "epochs": EPOCHS,
+            "learning_rate": LEARNING_RATE,
+            "dropout_probability": 0.5,
+            "cross_validation_folds": 4
+        },
+        "overall_results": {
+            "average_test_accuracy": round(avg_test_acc_all_subjects, 2),
+            "number_of_subjects": len(per_subject_test_acc),
+            "best_subject_accuracy": round(max(per_subject_test_acc), 2),
+            "worst_subject_accuracy": round(min(per_subject_test_acc), 2),
+            "accuracy_std": round(float(np.std(per_subject_test_acc)), 2)
+        },
+        "per_subject_results": [],
+        "model_info": {
+            "architecture": "EEGNet",
+            "optimizer": "Adam",
+            "loss_function": "CrossEntropyLoss",
+            "saved_models_count": len(best_model_states_all_subjects)
+        }
+    }
+    
+    # Add per-subject results
+    for subject_id in range(1, len(per_subject_test_acc) + 1):
+        subject_result = {
+            "subject_id": subject_id,
+            "test_accuracy": round(per_subject_test_acc[subject_id - 1], 2),
+            "model_saved": f"subject_{subject_id:02d}_best_model.pth",
+            "performance_rank": 0  # Will be filled after sorting
+        }
+        report_data["per_subject_results"].append(subject_result)
+    
+    # Sort subjects by accuracy and assign ranks
+    sorted_subjects = sorted(report_data["per_subject_results"], 
+                           key=lambda x: x["test_accuracy"], reverse=True)
+    
+    for rank, subject in enumerate(sorted_subjects, 1):
+        # Find the subject in original list and update rank
+        for subj in report_data["per_subject_results"]:
+            if subj["subject_id"] == subject["subject_id"]:
+                subj["performance_rank"] = rank
+                break
+    
+    # Add summary statistics
+    report_data["summary_statistics"] = {
+        "accuracy_distribution": {
+            "above_average_subjects": len([acc for acc in per_subject_test_acc if acc > avg_test_acc_all_subjects]),
+            "below_average_subjects": len([acc for acc in per_subject_test_acc if acc < avg_test_acc_all_subjects]),
+            "at_average_subjects": len([acc for acc in per_subject_test_acc if acc == avg_test_acc_all_subjects])
+        },
+        "accuracy_quartiles": {
+            "q1": round(float(np.percentile(per_subject_test_acc, 25)), 2),
+            "q2_median": round(float(np.percentile(per_subject_test_acc, 50)), 2),
+            "q3": round(float(np.percentile(per_subject_test_acc, 75)), 2)
+        }
+    }
+    
+    # Generate filename with timestamp
+    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_filename = f"within_subject_training_report_{timestamp_str}.json"
+    report_path = paths.reports / report_filename
+    
+    # Save report to JSON file
+    with open(report_path, 'w', encoding='utf-8') as f:
+        json.dump(report_data, f, indent=2, ensure_ascii=False)
+    
+    logger.info(f"Within-Subject training report saved to: {report_path}")
+    
+    # Also save a latest report (overwrite previous)
+    latest_report_path = paths.reports / "latest_within_subject_report.json"
+    with open(latest_report_path, 'w', encoding='utf-8') as f:
+        json.dump(report_data, f, indent=2, ensure_ascii=False)
+    
+    logger.info(f"Latest Within-Subject report updated: {latest_report_path}")
+    
+    return report_path
+
+
+def generate_cs_report(best_model_state, per_subject_test_acc, avg_test_acc_all):
+    """
+    Generate a cross-subject training report in JSON format.
+    
+    Args:
+        best_model_state: Best model state dictionary
+        per_subject_test_acc: List of average test accuracies per subject
+        avg_test_acc_all: Overall average test accuracy
+    """
+    paths = Paths.from_here()
+    
+    # Create reports directory if it doesn't exist
+    paths.reports.mkdir(parents=True, exist_ok=True)
+    
+    # Create report data structure
+    report_data = {
+        "training_type": "Cross-Subject",
+        "timestamp": datetime.now().isoformat(),
+        "model_parameters": {
+            "batch_size": BATCH_SIZE,
+            "epochs": EPOCHS,
+            "learning_rate": LEARNING_RATE,
+            "dropout_probability": 0.25,
+            "total_folds": 90,
+            "repeats_per_subject": 10,
+            "train_subjects_per_fold": 5,
+            "validation_subjects_per_fold": 3
+        },
+        "overall_results": {
+            "average_test_accuracy": round(avg_test_acc_all, 2),
+            "standard_error": round(float(np.std(per_subject_test_acc) / np.sqrt(len(per_subject_test_acc))), 2),
+            "number_of_test_subjects": len(per_subject_test_acc),
+            "best_subject_accuracy": round(max(per_subject_test_acc), 2),
+            "worst_subject_accuracy": round(min(per_subject_test_acc), 2),
+            "accuracy_std": round(float(np.std(per_subject_test_acc)), 2)
+        },
+        "per_subject_results": [],
+        "model_info": {
+            "architecture": "EEGNet",
+            "optimizer": "Adam",
+            "loss_function": "CrossEntropyLoss",
+            "saved_model": "cross_subject_best_model.pth"
+        }
+    }
+    
+    # Add per-subject results
+    for subject_id in range(1, len(per_subject_test_acc) + 1):
+        subject_result = {
+            "test_subject_id": subject_id,
+            "test_accuracy": round(per_subject_test_acc[subject_id - 1], 2),
+            "performance_rank": 0  # Will be filled after sorting
+        }
+        report_data["per_subject_results"].append(subject_result)
+    
+    # Sort subjects by accuracy and assign ranks
+    sorted_subjects = sorted(report_data["per_subject_results"], 
+                           key=lambda x: x["test_accuracy"], reverse=True)
+    
+    for rank, subject in enumerate(sorted_subjects, 1):
+        # Find the subject in original list and update rank
+        for subj in report_data["per_subject_results"]:
+            if subj["test_subject_id"] == subject["test_subject_id"]:
+                subj["performance_rank"] = rank
+                break
+    
+    # Add summary statistics
+    report_data["summary_statistics"] = {
+        "accuracy_distribution": {
+            "above_average_subjects": len([acc for acc in per_subject_test_acc if acc > avg_test_acc_all]),
+            "below_average_subjects": len([acc for acc in per_subject_test_acc if acc < avg_test_acc_all]),
+            "at_average_subjects": len([acc for acc in per_subject_test_acc if acc == avg_test_acc_all])
+        },
+        "accuracy_quartiles": {
+            "q1": round(float(np.percentile(per_subject_test_acc, 25)), 2),
+            "q2_median": round(float(np.percentile(per_subject_test_acc, 50)), 2),
+            "q3": round(float(np.percentile(per_subject_test_acc, 75)), 2)
+        }
+    }
+    
+    # Generate filename with timestamp
+    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_filename = f"cross_subject_training_report_{timestamp_str}.json"
+    report_path = paths.reports / report_filename
+    
+    # Save report to JSON file
+    with open(report_path, 'w', encoding='utf-8') as f:
+        json.dump(report_data, f, indent=2, ensure_ascii=False)
+    
+    logger.info(f"Cross-Subject training report saved to: {report_path}")
+    
+    # Also save a latest report (overwrite previous)
+    latest_report_path = paths.reports / "latest_cross_subject_report.json"
+    with open(latest_report_path, 'w', encoding='utf-8') as f:
+        json.dump(report_data, f, indent=2, ensure_ascii=False)
+    
+    logger.info(f"Latest Cross-Subject report updated: {latest_report_path}")
+    
+    return report_path
+
+
 def main() -> None:
     """CLI entrypoint."""
     parser = argparse.ArgumentParser(description="Train a EEGNet model.")
-    parser.add_argument("--training_type", type=str, help="Training type [Cross-Subject, Within-Subject].", default="Within-Subject")
-    # parser.add_argument("--subject", type=int, default=None, help="Subject ID for Within-Subject training.")
+    parser.add_argument("--trainingType", type=str, help="Training type [Cross-Subject, Within-Subject].", default="Within-Subject")
+    parser.add_argument("--generateReport", type=bool, default=True, help="Generate report after training.")
     args = parser.parse_args()
+    
 
-    if args.training_type == "Within-Subject":
+    if args.trainingType == "Within-Subject":
         logger.info("Training Within-Subject models for all subjects...")
     else:
         logger.info("Training Cross-Subject model...")
 
-    paths = Paths.from_here()
 
-    if args.training_type == "Within-Subject":
-        within_subject_training()
+    if args.trainingType == "Within-Subject":
+        per_subject_test_acc, avg_test_acc_all_subjects, best_model_states_all_subjects = within_subject_training()
+        if args.generateReport:
+            generate_ws_report(per_subject_test_acc, avg_test_acc_all_subjects, best_model_states_all_subjects)
     else:
-        cross_subject_training()
+        best_model_state, per_subject_test_acc, avg_test_acc_all = cross_subject_training()
+        if args.generateReport:
+            generate_cs_report(best_model_state, per_subject_test_acc, avg_test_acc_all)
 
 if __name__ == "__main__":
     main()
