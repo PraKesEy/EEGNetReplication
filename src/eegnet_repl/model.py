@@ -173,8 +173,8 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
                 
                 # Calculate accuracy
                 predicted_classes = torch.argmax(preds, dim=1)
-                correct += (predicted_classes == new_labels).sum().item()
-                total += new_labels.size(0)
+                correct += (predicted_classes == labels).sum().item()
+                total += labels.size(0)
 
         # track train loss, validation loss, and validation accuracy
         train_losses.append(running_loss/len(train_loader))
@@ -226,7 +226,7 @@ def test(model, test_loader, loss_fn) -> float:
             
             # Calculate accuracy
             predicted_classes = torch.argmax(preds, dim=1)
-            correct += (predicted_classes == new_labels).sum().item()
-            total += new_labels.size(0)
+            correct += (predicted_classes == labels).sum().item()
+            total += labels.size(0)
 
     return 100 * correct / total
