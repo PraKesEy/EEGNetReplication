@@ -190,7 +190,7 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
 
     return best_model, train_losses, val_losses, val_accuracies
 
-def test(model, test_loader, loss_fn) -> float:
+def evaluate_model(model, test_loader, loss_fn) -> float:
     '''
     Test a pytorch model.
     Params:

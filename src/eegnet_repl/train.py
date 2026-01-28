@@ -9,7 +9,7 @@ from datetime import datetime
 from eegnet_repl.config import Paths
 from eegnet_repl.dataset import BCICI2ADataset, build_dataset_from_preprocessed
 from eegnet_repl.logger import logger
-from eegnet_repl.model import EEGNet, train, test
+from eegnet_repl.model import EEGNet, train, evaluate_model
 # from sklearn.metrics import ConfusionMatrixDisplay, accuracy_score, classification_report
 from sklearn.model_selection import KFold
 
@@ -102,7 +102,7 @@ def within_subject_training():
             final_val_acc = val_accuracies[-1]
             
             # Test the model
-            test_acc = test(model, test_loader, loss_fn)
+            test_acc = evaluate_model(model, test_loader, loss_fn)
             
             # Log validation and test accuracy
             logger.info(f"    Validation Accuracy: {final_val_acc:.2f}%")
@@ -243,7 +243,7 @@ def cross_subject_training():
             final_val_acc = val_accuracies[-1]
             
             # Test the model
-            test_acc = test(model, test_loader, loss_fn)
+            test_acc = evaluate_model(model, test_loader, loss_fn)
             
             # Log results
             logger.info(f"    Validation Accuracy: {final_val_acc:.2f}%")

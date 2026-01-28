@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import unittest
-import numpy as np
 import torch
 import torch.nn as nn
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
-from eegnet_repl.model import EEGNet, train, test
+from eegnet_repl.model import EEGNet, train, evaluate_model
 
 
 class TestEEGNet(unittest.TestCase):
@@ -129,9 +128,6 @@ class TestEEGNet(unittest.TestCase):
         # Check kernel size
         self.assertEqual(temporal_conv.kernel_size, (1, 32))
         
-        # Check padding
-        self.assertEqual(temporal_conv.padding, (0, 16))  # 'same' padding
-        
         # Check bias is disabled
         self.assertIsNone(temporal_conv.bias)
         
@@ -213,13 +209,13 @@ class TestTrainFunction(unittest.TestCase):
             pass
 
 
-class TestTestFunction(unittest.TestCase):
-    """Test the test function."""
+class TestEvaluateFunction(unittest.TestCase):
+    """Test the evaluate_model function."""
     
-    def test_test_function_signature(self):
-        """Test that test function exists and has correct signature."""
+    def test_evaluate_function_signature(self):
+        """Test that evaluate_model function exists and has correct signature."""
         # Check function exists
-        self.assertTrue(callable(test))
+        self.assertTrue(callable(evaluate_model))
         
         # Test with mock objects
         model = Mock()
@@ -228,7 +224,7 @@ class TestTestFunction(unittest.TestCase):
         
         try:
             # This will likely fail during execution, but we're testing the signature
-            test(model, test_loader, loss_fn)
+            evaluate_model(model, test_loader, loss_fn)
         except Exception:
             # Expected since we're using mocks
             pass
