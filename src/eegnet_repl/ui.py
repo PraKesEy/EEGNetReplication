@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import random
 import subprocess
 import sys
 import threading
@@ -16,8 +15,6 @@ from matplotlib.figure import Figure
 import pandas as pd
 import numpy as np
 import torch
-from torch import nn
-from torch.utils import data
 from mne.viz import plot_topomap
 import mne
 
@@ -37,12 +34,6 @@ def load_model(path: Path) -> EEGNet:
     model.load_state_dict(state_dict)
     model.eval()
     return model
-
-def _format_float(x: float) -> str:
-    if pd.isna(x):
-        return ""
-    return f"{x:.3g}"
-
 
 class LogHandler:
     """Custom log handler to capture logs in GUI."""

@@ -11,7 +11,6 @@ import numpy as np
 import mne
 from numpy import multiply
 
-import torch
 from torch.utils.data import Dataset
 from torchvision.transforms import ToTensor
 import matplotlib.pyplot as plt

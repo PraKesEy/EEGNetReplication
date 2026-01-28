@@ -5,10 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 from datetime import datetime
-from pathlib import Path
-
-import matplotlib.pyplot as plt
-import pandas as pd
 
 from eegnet_repl.config import Paths
 from eegnet_repl.dataset import BCICI2ADataset, build_dataset_from_preprocessed

@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
-
 from eegnet_repl.logger import logger
 
 import numpy as np
 import torch
 import torch.nn as nn
 
-#@dataclass(frozen=True)
 # Define model
 class EEGNet(nn.Module):
     def __init__(self, C, T, F1=8, D=2, p=0.5):
