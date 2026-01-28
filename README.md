@@ -39,7 +39,7 @@ python -m eegnet_repl.dataset --src kaggle
 3) Train model & Report generation
 
 ```bash
-python -m eegnet_repl.train --trainingType Within-Subject --generateReport True
+python -m eegnet_repl.train --trainingType Within-Subject --epochs 500 --generateReport True
 ```
 
 4) Run UI

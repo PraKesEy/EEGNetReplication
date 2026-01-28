@@ -110,12 +110,17 @@ class App(tk.Tk):
                                     values=["Within-Subject", "Cross-Subject"])
         training_combo.grid(row=0, column=1, padx=5)
         
+        ttk.Label(step3_frame, text="Epochs:").grid(row=0, column=2, sticky=tk.W, padx=5)
+        self.epochs_var = tk.StringVar(value="100")
+        epochs_entry = ttk.Entry(step3_frame, textvariable=self.epochs_var, width=10)
+        epochs_entry.grid(row=0, column=3, padx=5)
+        
         self.generate_report_var = tk.BooleanVar(value=True)
         report_check = ttk.Checkbutton(step3_frame, text="Generate Report", variable=self.generate_report_var)
-        report_check.grid(row=0, column=2, padx=10)
+        report_check.grid(row=0, column=4, padx=10)
         
         train_btn = ttk.Button(step3_frame, text="Train Model", command=self.train_model)
-        train_btn.grid(row=0, column=3, padx=10)
+        train_btn.grid(row=0, column=5, padx=10)
         
         # Progress bar
         self.progress = Progressbar(training_frame, mode='indeterminate')
@@ -237,8 +242,20 @@ class App(tk.Tk):
             self.status_var.set("Training model...")
             self.progress.start()
             try:
+                # Validate epochs input
+                try:
+                    epochs = int(self.epochs_var.get())
+                    if epochs < 1 or epochs > 1000:
+                        raise ValueError("Epochs must be between 1 and 1000")
+                except ValueError as e:
+                    messagebox.showerror("Invalid Input", f"Invalid epochs value: {str(e)}")
+                    self.status_var.set("Invalid epochs input")
+                    self.progress.stop()
+                    return
+                
                 cmd = [sys.executable, "-m", "eegnet_repl.train", 
                       "--trainingType", self.training_type_var.get(),
+                      "--epochs", str(epochs),
                       "--generateReport", str(self.generate_report_var.get())]
                 self.run_subprocess(cmd, "Model training completed")
                 # Refresh reports after training
