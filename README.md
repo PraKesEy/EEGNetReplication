@@ -24,7 +24,7 @@ pip install -e ".[ds,test,lint]"
 python -m eegnet_repl.fetch --src kaggle
 ```
 
-Alternative:
+Alternative (Non-functional):
 ```bash
 python -m eegnet_repl.fetch --src moabb
 ```
