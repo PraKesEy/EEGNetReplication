@@ -110,7 +110,7 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
     val_loader - dataloader for the valset
 
     Returns: 
-    1. state_dict of the model with the lowest validation loss, 
+    1. state_dict of the model with the best validation accuracy, 
     2. train losses across epochs
     3. validation losses across epochs
     4. validation accuracies across epochs
@@ -125,45 +125,41 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
     
     train_losses, val_losses, val_accuracies = [], [], []
     best_model = model.state_dict()
+    best_val_acc = 0
 
-    for e in range(1,nepochs+1):
+    for e in range(1, nepochs + 1):
         running_loss = 0
         running_val_loss = 0
-        for signals, labels in train_loader: # signals = (batch, C, T), labels = (batch, label)
-            
-            signals = signals.float() # added to avoid dtype mismatch error
-
-            # Move data to device
+        
+        # Training phase
+        model.train()
+        for signals, labels in train_loader:
+            signals = signals.float()
             signals, labels = signals.to(device), labels.to(device)
 
             # Training pass
-            model.train() # set model in train mode
             preds = model(signals)
-            loss = loss_fn(preds,labels)
-
+            loss = loss_fn(preds, labels)
             running_loss += loss.item()
 
             # Backpropagation
+            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            optimizer.zero_grad()
 
-    #else:
+        # Validation phase
+        model.eval()
         val_loss = 0
         correct = 0
         total = 0
-        # Evalaute model on validation at the end of each epoch.
+        
         with torch.no_grad():
-            for signals, labels in val_loader: # signals = (batch, C, T), labels = (batch, label)
-
-                signals = signals.float() # added to avoid dtype mismatch error
-                
-                # Move data to device
+            for signals, labels in val_loader:
+                signals = signals.float()
                 signals, labels = signals.to(device), labels.to(device)
                 
-                preds = model(signals) # logits
-                val_loss = loss_fn(preds,labels)
-
+                preds = model(signals)
+                val_loss = loss_fn(preds, labels)
                 running_val_loss += val_loss.item()
                 
                 # Calculate accuracy
@@ -171,21 +167,24 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
                 correct += (predicted_classes == labels).sum().item()
                 total += labels.size(0)
 
-        # track train loss, validation loss, and validation accuracy
-        train_losses.append(running_loss/len(train_loader))
-        val_losses.append(running_val_loss/len(val_loader))
-        val_accuracies.append(100 * correct / total)
+        # Calculate metrics
+        epoch_train_loss = running_loss / len(train_loader)
+        epoch_val_loss = running_val_loss / len(val_loader)
+        epoch_val_acc = 100 * correct / total
 
-        if running_val_loss == np.min(np.array(val_losses)):
-            best_model = model.state_dict()
+        train_losses.append(epoch_train_loss)
+        val_losses.append(epoch_val_loss)
+        val_accuracies.append(epoch_val_acc)
 
-        if e==1 or e%50==0 or e==nepochs:
-            logger.info("Epoch: {}/{}.. Training Loss: {:.3f}.. Validation Loss: {:.3f}.. Validation Accuracy: {:.2f}%.. ".format(
-                e, nepochs, 
-                running_loss/len(train_loader),
-                running_val_loss/len(val_loader),
-                val_accuracies[-1]
-            ))
+        # Save best model based on validation accuracy
+        if epoch_val_acc > best_val_acc:
+            best_val_acc = epoch_val_acc
+            best_model = model.state_dict().copy()
+
+        # Logging
+        if e == 1 or e % 50 == 0 or e == nepochs:
+            logger.info(f"Epoch: {e}/{nepochs}.. Train Loss: {epoch_train_loss:.3f}.. "
+                       f"Val Loss: {epoch_val_loss:.3f}.. Val Acc: {epoch_val_acc:.2f}%..")
 
     return best_model, train_losses, val_losses, val_accuracies
 

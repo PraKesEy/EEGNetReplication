@@ -56,7 +56,7 @@ def within_subject_training(epochs=EPOCHS):
         subject_test_acc = []
 
         # track best model for this subject
-        best_val_loss = 100
+        best_val_acc = 0  # Track best validation accuracy instead of loss
         best_model_state = None
 
         # K-Fold Cross Validation on train_data
@@ -66,8 +66,8 @@ def within_subject_training(epochs=EPOCHS):
         for fold, (train_val_ids, test_ids) in enumerate(kf.split(subject_data)):
             logger.info(f"  Fold {fold+1}/{splits}")
 
-            # Further split train_val into train and validation (75-25 split)
-            val_size = len(train_val_ids) // 4 # ~56% train, ~19% val, 25% test
+            # Further split train_val into train and validation (80-20 split for larger val set)
+            val_size = len(train_val_ids) // 5  # 20% validation, 80% train
             train_ids = train_val_ids[val_size:]
             val_ids = train_val_ids[:val_size]
 
@@ -77,7 +77,7 @@ def within_subject_training(epochs=EPOCHS):
             test_subset = Subset(subject_data, test_ids)
 
             # Create data loaders
-            train_loader = DataLoader(train_subset, batch_size=BATCH_SIZE, shuffle=True)
+            train_loader = DataLoader(train_subset, batch_size=BATCH_SIZE, shuffle=True)  # Reduced from 64
             val_loader = DataLoader(val_subset, batch_size=BATCH_SIZE, shuffle=False)
             test_loader = DataLoader(test_subset, batch_size=BATCH_SIZE, shuffle=False)
 
@@ -87,25 +87,25 @@ def within_subject_training(epochs=EPOCHS):
             optimizer = optim.Adam(
                 params=model.parameters(),
                 lr=LEARNING_RATE,
-                eps=1e-07,  # the only change from default eps=1e-8
-                foreach=None,  # default
-                fused=None,  # default
+                # weight_decay=1e-4,  # Add L2 regularization
+                eps=1e-07,
+                foreach=None,
+                fused=None,
             )
+            
             loss_fn = nn.CrossEntropyLoss()
 
             # Train the model
             best_fold_model, _, val_losses, val_accuracies = train(
-                model, optimizer, loss_fn, train_loader, val_loader, nepochs=epochs
+                model, optimizer, loss_fn, train_loader, val_loader, 
+                nepochs=epochs
             )
             
             # Load best model from training
             model.load_state_dict(best_fold_model)
             
-            # Get final validation loss and accuracy
+            # Get final validation and test accuracies
             final_val_acc = max(val_accuracies)
-            final_val_loss = min(val_losses)
-            
-            # Test the model
             test_acc = evaluate_model(model, test_loader)
             
             # Log validation and test accuracy
@@ -115,9 +115,9 @@ def within_subject_training(epochs=EPOCHS):
             # Store test accuracy for this fold
             subject_test_acc.append(test_acc)
             
-            # Track best model based on validation accuracy
-            if final_val_loss < best_val_loss:
-                best_val_loss = final_val_loss
+            # Track best model based on validation accuracy (not loss)
+            if final_val_acc > best_val_acc:
+                best_val_acc = final_val_acc
                 best_model_state = best_fold_model
         
         # Calculate average test accuracy for this subject
