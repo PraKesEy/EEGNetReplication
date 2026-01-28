@@ -19,6 +19,7 @@ import torch
 from torch.utils.data import Subset, DataLoader
 import torch.nn as nn
 import torch.optim as optim
+import torch.utils.data as data
 
 
 BATCH_SIZE = 64
@@ -50,7 +51,13 @@ def within_subject_training(epochs=EPOCHS):
         logger.info(f"Training for Subject {subject_id}")
         
         # Load preprocessed data for the subject
-        subject_data = build_dataset_from_preprocessed(subject=subject_id)
+        subject_train_data = build_dataset_from_preprocessed(subject=subject_id)
+        subject_eval_data = build_dataset_from_preprocessed(subject=subject_id, mode="Eval")
+
+        # Combine the data for K-Fold CV by concatenating numpy arrays
+        combined_X = np.concatenate([subject_train_data.X, subject_eval_data.X], axis=0)
+        combined_y = np.concatenate([subject_train_data.y, subject_eval_data.y], axis=0)
+        subject_data = BCICI2ADataset(combined_X, combined_y)
 
         # test accuracy array for this subject
         subject_test_acc = []
