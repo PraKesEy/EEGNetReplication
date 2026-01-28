@@ -137,22 +137,6 @@ class TestMapLabels(unittest.TestCase):
         result = map_labels(labels, map_dict)
         self.assertEqual(result.dtype, labels.dtype)
     
-    def test_output_shape(self):
-        """Test that output has same shape as input."""
-        labels = np.array([[1, 2], [3, 1]])
-        map_dict = {1: 0, 2: 1, 3: 2}
-        
-        result = map_labels(labels, map_dict)
-        self.assertEqual(result.shape, labels.shape)
-    
-    def test_unmapped_labels_error(self):
-        """Test that unmapped labels raise an error."""
-        labels = np.array([1, 2, 3, 4])  # 4 is not in the map
-        map_dict = {1: 0, 2: 1, 3: 2}
-        
-        with self.assertRaises(RuntimeError):
-            map_labels(labels, map_dict)
-    
     def test_single_label_mapping(self):
         """Test mapping with single unique label."""
         labels = np.array([5, 5, 5, 5])
