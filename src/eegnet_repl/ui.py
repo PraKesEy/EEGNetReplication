@@ -508,14 +508,19 @@ class App(tk.Tk):
 def plot_temporal_filters(model_dict) -> None:
     # Plot learned temporal filters
     temporal_filters = model_dict['temporal.0.weight']
+    t = np.linspace(0,0.25,temporal_filters[0,0,0].shape[0]) # Time vector for 250 ms at 128 Hz
     n_filters = temporal_filters.shape[0]
-    plt.figure(figsize=(10, 6))
+    n_cols = 4
+    n_rows = n_filters // n_cols + int(n_filters % n_cols > 0)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 8))
     for i in range(n_filters):
-        plt.plot(temporal_filters[i, 0, 0].cpu().numpy(), label=f'Filter {i+1}')
-    plt.title('Learned Temporal Filters')
-    plt.xlabel('Time Points')
-    plt.ylabel('Amplitude')
-    plt.legend()
+        row = i // n_cols
+        col = i % n_cols
+        axes[row, col].plot(t, temporal_filters[i, 0, 0].cpu().numpy(), 'ko-')
+        axes[row, col].set_title(f'Temporal Filter {i+1}')
+        axes[row, col].set_xlabel('Time (s)')
+        axes[row, col].set_ylabel('Amplitude')
+    plt.tight_layout()
     plt.show()
 
 def plot_spatial_filters(model_dict) -> None:
