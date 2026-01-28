@@ -26,9 +26,12 @@ EPOCHS = 500
 LEARNING_RATE = 0.001
 
 
-def within_subject_training():
+def within_subject_training(epochs=EPOCHS):
     '''
     Train and validate EEGNet model for within-subject classification.
+
+    Arguments:
+    - epochs: Number of training epochs
     
     Returns:
     - Per subject test accuracies array
@@ -92,7 +95,7 @@ def within_subject_training():
 
             # Train the model
             best_fold_model, _, val_losses, val_accuracies = train(
-                model, optimizer, loss_fn, train_loader, val_loader, nepochs=EPOCHS
+                model, optimizer, loss_fn, train_loader, val_loader, nepochs=epochs
             )
             
             # Load best model from training
@@ -138,7 +141,7 @@ def within_subject_training():
     return per_subject_test_acc, avg_test_acc_all_subjects, best_model_states_all_subjects
 
 
-def cross_subject_training():
+def cross_subject_training(epochs=EPOCHS):
     '''
     Train and validate EEGNet model for cross-subject classification.
     For each subject: train on 5 random subjects, validate on 3 others, test on target subject.
@@ -234,7 +237,7 @@ def cross_subject_training():
             
             # Train the model
             best_fold_model, _, val_losses, val_accuracies = train(
-                model, optimizer, loss_fn, train_loader, val_loader, nepochs=EPOCHS
+                model, optimizer, loss_fn, train_loader, val_loader, nepochs=epochs
             )
             
             # Load best model from training
@@ -482,9 +485,9 @@ def main() -> None:
     """CLI entrypoint."""
     parser = argparse.ArgumentParser(description="Train a EEGNet model.")
     parser.add_argument("--trainingType", type=str, help="Training type [Cross-Subject, Within-Subject].", default="Within-Subject")
+    parser.add_argument("--epochs", type=int, default=EPOCHS, help="Number of training epochs.")
     parser.add_argument("--generateReport", type=bool, default=True, help="Generate report after training.")
     args = parser.parse_args()
-    
 
     if args.trainingType == "Within-Subject":
         logger.info("Training Within-Subject models for all subjects...")
@@ -493,11 +496,11 @@ def main() -> None:
 
 
     if args.trainingType == "Within-Subject":
-        per_subject_test_acc, avg_test_acc_all_subjects, best_model_states_all_subjects = within_subject_training()
+        per_subject_test_acc, avg_test_acc_all_subjects, best_model_states_all_subjects = within_subject_training(epochs=args.epochs)
         if args.generateReport:
             generate_ws_report(per_subject_test_acc, avg_test_acc_all_subjects, best_model_states_all_subjects)
     else:
-        best_model_state, per_subject_test_acc, avg_test_acc_all = cross_subject_training()
+        best_model_state, per_subject_test_acc, avg_test_acc_all = cross_subject_training(epochs=args.epochs)
         if args.generateReport:
             generate_cs_report(best_model_state, per_subject_test_acc, avg_test_acc_all)
 
