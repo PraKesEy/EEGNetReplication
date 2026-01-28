@@ -53,7 +53,7 @@ def within_subject_training():
         subject_test_acc = []
 
         # track best model for this subject
-        best_val_acc = 0
+        best_val_loss = 100
         best_model_state = None
 
         # K-Fold Cross Validation on train_data
@@ -64,7 +64,7 @@ def within_subject_training():
             logger.info(f"  Fold {fold+1}/{splits}")
 
             # Further split train_val into train and validation (75-25 split)
-            val_size = len(train_val_ids) // 4
+            val_size = len(train_val_ids) // 4 # ~56% train, ~19% val, 25% test
             train_ids = train_val_ids[val_size:]
             val_ids = train_val_ids[:val_size]
 
@@ -91,18 +91,19 @@ def within_subject_training():
             loss_fn = nn.CrossEntropyLoss()
 
             # Train the model
-            best_fold_model, train_losses, val_losses, val_accuracies = train(
+            best_fold_model, _, val_losses, val_accuracies = train(
                 model, optimizer, loss_fn, train_loader, val_loader, nepochs=EPOCHS
             )
             
             # Load best model from training
             model.load_state_dict(best_fold_model)
             
-            # Get final validation accuracy
-            final_val_acc = val_accuracies[-1]
+            # Get final validation loss and accuracy
+            final_val_acc = max(val_accuracies)
+            final_val_loss = min(val_losses)
             
             # Test the model
-            test_acc = evaluate_model(model, test_loader, loss_fn)
+            test_acc = evaluate_model(model, test_loader)
             
             # Log validation and test accuracy
             logger.info(f"    Validation Accuracy: {final_val_acc:.2f}%")
@@ -112,8 +113,8 @@ def within_subject_training():
             subject_test_acc.append(test_acc)
             
             # Track best model based on validation accuracy
-            if final_val_acc > best_val_acc:
-                best_val_acc = final_val_acc
+            if final_val_loss < best_val_loss:
+                best_val_loss = final_val_loss
                 best_model_state = best_fold_model
         
         # Calculate average test accuracy for this subject
@@ -163,7 +164,7 @@ def cross_subject_training():
     # Track results
     all_fold_test_acc = []
     per_subject_test_acc = []
-    best_val_acc = 0
+    best_val_loss = 100
     best_model_state = None
     fold_count = 0
     
@@ -232,18 +233,19 @@ def cross_subject_training():
             loss_fn = nn.CrossEntropyLoss()
             
             # Train the model
-            best_fold_model, train_losses, val_losses, val_accuracies = train(
+            best_fold_model, _, val_losses, val_accuracies = train(
                 model, optimizer, loss_fn, train_loader, val_loader, nepochs=EPOCHS
             )
             
             # Load best model from training
             model.load_state_dict(best_fold_model)
             
-            # Get final validation accuracy
-            final_val_acc = val_accuracies[-1]
+            # Get final validation loss and accuracy
+            final_val_acc = max(val_accuracies)
+            final_val_loss = min(val_losses)
             
             # Test the model
-            test_acc = evaluate_model(model, test_loader, loss_fn)
+            test_acc = evaluate_model(model, test_loader)
             
             # Log results
             logger.info(f"    Validation Accuracy: {final_val_acc:.2f}%")
@@ -254,8 +256,8 @@ def cross_subject_training():
             all_fold_test_acc.append(test_acc)
             
             # Track best model globally
-            if final_val_acc > best_val_acc:
-                best_val_acc = final_val_acc
+            if final_val_loss < best_val_loss:
+                best_val_loss = final_val_loss
                 best_model_state = best_fold_model
         
         # Calculate average test accuracy for this subject

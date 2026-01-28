@@ -123,11 +123,10 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
     # Move model to device
     model = model.to(device)
     
-    
     train_losses, val_losses, val_accuracies = [], [], []
     best_model = model.state_dict()
 
-    for e in range(nepochs):
+    for e in range(1,nepochs+1):
         running_loss = 0
         running_val_loss = 0
         for signals, labels in train_loader: # signals = (batch, C, T), labels = (batch, label)
@@ -162,7 +161,7 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
                 # Move data to device
                 signals, labels = signals.to(device), labels.to(device)
                 
-                preds = model(signals)
+                preds = model(signals) # logits
                 val_loss = loss_fn(preds,labels)
 
                 running_val_loss += val_loss.item()
@@ -180,9 +179,9 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
         if running_val_loss == np.min(np.array(val_losses)):
             best_model = model.state_dict()
 
-        if e%50==0:
+        if e==1 or e%50==0 or e==nepochs:
             logger.info("Epoch: {}/{}.. Training Loss: {:.3f}.. Validation Loss: {:.3f}.. Validation Accuracy: {:.2f}%.. ".format(
-                e+1, nepochs, 
+                e, nepochs, 
                 running_loss/len(train_loader),
                 running_val_loss/len(val_loader),
                 val_accuracies[-1]
@@ -190,13 +189,12 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, nepochs=500):
 
     return best_model, train_losses, val_losses, val_accuracies
 
-def evaluate_model(model, test_loader, loss_fn) -> float:
+def evaluate_model(model, test_loader) -> float:
     '''
     Test a pytorch model.
     Params:
     model - a pytorch model to test
     test_loader - dataloader for the testset
-    loss_fn - the criterion (loss function)
 
     Returns: 
     test accuracy (percentage)
@@ -220,7 +218,7 @@ def evaluate_model(model, test_loader, loss_fn) -> float:
             # Move data to device
             signals, labels = signals.to(device), labels.to(device)
             
-            preds = model(signals)
+            preds = model(signals) # returns logits, might be negative
             
             # Calculate accuracy
             predicted_classes = torch.argmax(preds, dim=1)
